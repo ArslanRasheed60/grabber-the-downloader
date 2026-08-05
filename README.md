@@ -17,6 +17,23 @@ On first launch, Grabber checks for `yt-dlp` and `ffmpeg`. If they are missing i
 them into its own application-data folder and reports progress while it does. Nothing is
 installed system-wide and nothing already on your machine is modified.
 
+### On a Mac
+
+Everything you need is Node 18 or newer. Nothing is committed that is platform-specific.
+
+```bash
+git clone https://github.com/ArslanRasheed60/grabber-the-downloader.git
+cd grabber-the-downloader
+npm install
+npm start          # run it
+npm test           # or check the suite first
+npm run dist:mac   # build a .dmg for Apple Silicon (dist:mac-intel for Intel)
+```
+
+The app figures out on its own that it is on macOS and fetches the Apple Silicon or Intel
+builds of its tools to match. The first launch of a packaged build needs right-click → Open,
+because it is signed ad-hoc rather than with a Developer ID.
+
 ## Building installers
 
 ```bash
