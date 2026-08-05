@@ -1,0 +1,7 @@
+node_modules/
+release/
+resources/bin/*
+!resources/bin/.gitkeep
+*.log
+.DS_Store
+Thumbs.db

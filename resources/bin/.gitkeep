@@ -1,0 +1,2 @@
+# Build-time binaries land here (see scripts/fetch-binaries.js).
+# Empty is fine: the app downloads what it needs on first run.

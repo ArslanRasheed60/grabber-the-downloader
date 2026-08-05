@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Grabber</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- First run: fetch the tools the app needs, then get out of the way. -->
+    <div class="setup" id="setup" hidden>
+      <div class="setup__panel">
+        <p class="eyebrow">First run</p>
+        <h1 class="setup__title">Setting up</h1>
+        <p class="setup__lede" id="setupLede">
+          Grabber needs a couple of small tools to fetch and merge video. It downloads them
+          once, into its own folder. Nothing else on your computer changes.
+        </p>
+
+        <ul class="toollist" id="toolList"></ul>
+
+        <div class="setup__actions">
+          <button class="btn btn--primary" id="setupInstall" type="button">Download tools</button>
+          <button class="btn btn--ghost" id="setupSkip" type="button">Continue without them</button>
+        </div>
+        <p class="setup__note" id="setupNote"></p>
+      </div>
+    </div>
+
+    <header class="titlebar" id="titlebar">
+      <div class="wordmark">
+        <span class="wordmark__lamp" id="lamp" aria-hidden="true"></span>
+        <span class="wordmark__name">Grabber</span>
+        <span class="wordmark__sub">video downloader</span>
+      </div>
+      <div class="titlebar__tools">
+        <button class="iconbtn" id="openFolderBtn" type="button" title="Open the downloads folder">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.1a1.5 1.5 0 0 1 1.06.44L11 6.75h8.5A1.5 1.5 0 0 1 21 8.25v9.25A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+          <span class="sr-only">Open the downloads folder</span>
+        </button>
+        <button class="iconbtn" id="settingsBtn" type="button" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3zm10 -2.5h2.5v7H13zM3 16h18v2H3zm4 -2.5h2.5v7H7z"/></svg>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="stage">
+      <!-- Intake: the one place you actually have to touch. -->
+      <section class="intake" aria-labelledby="intakeHeading">
+        <h2 class="sr-only" id="intakeHeading">Add a link</h2>
+
+        <div class="intake__jack">
+          <label class="intake__label" for="urlInput">Link</label>
+          <input
+            id="urlInput"
+            class="intake__input"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="Paste a video link from anywhere"
+            aria-describedby="intakeHint"
+          />
+          <button class="btn btn--primary intake__go" id="analyzeBtn" type="button">Add</button>
+        </div>
+
+        <div class="intake__row">
+          <div class="chips" id="qualityChips" role="radiogroup" aria-label="What to download">
+            <button class="chip is-on" type="button" role="radio" aria-checked="true" data-mode="video" data-quality="best">Best video</button>
+            <button class="chip" type="button" role="radio" aria-checked="false" data-mode="video" data-quality="2160">4K</button>
+            <button class="chip" type="button" role="radio" aria-checked="false" data-mode="video" data-quality="1440">1440p</button>
+            <button class="chip" type="button" role="radio" aria-checked="false" data-mode="video" data-quality="1080">1080p</button>
+            <button class="chip" type="button" role="radio" aria-checked="false" data-mode="video" data-quality="720">720p</button>
+            <button class="chip" type="button" role="radio" aria-checked="false" data-mode="video" data-quality="480">480p</button>
+            <button class="chip chip--audio" type="button" role="radio" aria-checked="false" data-mode="audio" data-quality="best">Audio only</button>
+          </div>
+          <label class="switch" title="Queue every video in the playlist or channel">
+            <input type="checkbox" id="playlistToggle" />
+            <span class="switch__track"><span class="switch__knob"></span></span>
+            <span class="switch__label">Whole playlist</span>
+          </label>
+        </div>
+
+        <p class="intake__hint" id="intakeHint">
+          Paste one link, or several at once — one per line.
+        </p>
+      </section>
+
+      <!-- What the link turned out to be, before anything is queued. -->
+      <section class="preview" id="preview" hidden aria-live="polite">
+        <div class="preview__art">
+          <img id="previewThumb" alt="" />
+          <span class="preview__dur" id="previewDuration"></span>
+        </div>
+        <div class="preview__body">
+          <p class="eyebrow" id="previewKind">Video</p>
+          <h3 class="preview__title" id="previewTitle"></h3>
+          <dl class="specs" id="previewSpecs"></dl>
+        </div>
+        <div class="preview__actions">
+          <button class="btn btn--primary" id="previewAdd" type="button">Add to queue</button>
+          <button class="btn btn--ghost" id="previewDismiss" type="button">Dismiss</button>
+        </div>
+      </section>
+
+      <section class="queue" aria-labelledby="queueHeading">
+        <div class="queue__head">
+          <h2 class="section-title" id="queueHeading">Queue</h2>
+          <p class="queue__count" id="queueCount">Nothing queued</p>
+          <div class="queue__actions">
+            <button class="btn btn--quiet" id="pauseAllBtn" type="button">Pause all</button>
+            <button class="btn btn--quiet" id="resumeAllBtn" type="button">Resume all</button>
+            <button class="btn btn--quiet" id="clearBtn" type="button">Clear finished</button>
+          </div>
+        </div>
+
+        <ul class="joblist" id="jobList"></ul>
+
+        <div class="empty" id="emptyState">
+          <p class="empty__title">Nothing queued</p>
+          <p class="empty__body">Paste a link above and press Enter. Grabber figures out the rest.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="rail">
+      <span class="rail__item" id="railYtdlp">engine —</span>
+      <span class="rail__sep" aria-hidden="true"></span>
+      <span class="rail__item" id="railFfmpeg">ffmpeg —</span>
+      <span class="rail__sep" aria-hidden="true"></span>
+      <button class="rail__item rail__item--link" id="railDest" type="button" title="Open the downloads folder">—</button>
+      <span class="rail__spacer"></span>
+      <span class="rail__item rail__item--live" id="railStatus">Idle</span>
+    </footer>
+
+    <aside class="drawer" id="settingsDrawer" hidden aria-label="Settings">
+      <div class="drawer__head">
+        <h2 class="section-title">Settings</h2>
+        <button class="iconbtn" id="closeSettings" type="button" title="Close settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6z"/></svg>
+          <span class="sr-only">Close settings</span>
+        </button>
+      </div>
+
+      <div class="drawer__body">
+        <section class="field">
+          <label class="field__label" for="destInput">Save downloads to</label>
+          <div class="field__row">
+            <input class="field__input mono" id="destInput" type="text" readonly />
+            <button class="btn btn--quiet" id="chooseDestBtn" type="button">Change</button>
+          </div>
+        </section>
+
+        <div class="field-grid">
+          <section class="field">
+            <label class="field__label" for="containerSelect">Video container</label>
+            <select class="field__input" id="containerSelect">
+              <option value="mp4">MP4 — plays everywhere</option>
+              <option value="mkv">MKV — keeps every stream</option>
+              <option value="webm">WebM</option>
+              <option value="auto">Leave as downloaded</option>
+            </select>
+          </section>
+
+          <section class="field">
+            <label class="field__label" for="audioSelect">Audio-only format</label>
+            <select class="field__input" id="audioSelect">
+              <option value="mp3">MP3</option>
+              <option value="m4a">M4A</option>
+              <option value="opus">Opus</option>
+              <option value="flac">FLAC</option>
+              <option value="wav">WAV</option>
+              <option value="best">Keep original</option>
+            </select>
+          </section>
+
+          <section class="field">
+            <label class="field__label" for="concurrentInput">Downloads at once</label>
+            <input class="field__input" id="concurrentInput" type="number" min="1" max="8" step="1" />
+          </section>
+
+          <section class="field">
+            <label class="field__label" for="fragmentsInput">Connections per video</label>
+            <input class="field__input" id="fragmentsInput" type="number" min="1" max="16" step="1" />
+          </section>
+
+          <section class="field">
+            <label class="field__label" for="cookiesSelect">Use cookies from</label>
+            <select class="field__input" id="cookiesSelect">
+              <option value="none">No browser</option>
+              <option value="chrome">Chrome</option>
+              <option value="edge">Edge</option>
+              <option value="firefox">Firefox</option>
+              <option value="brave">Brave</option>
+              <option value="opera">Opera</option>
+              <option value="vivaldi">Vivaldi</option>
+              <option value="safari">Safari</option>
+              <option value="chromium">Chromium</option>
+            </select>
+          </section>
+
+          <section class="field">
+            <label class="field__label" for="rateInput">Speed limit</label>
+            <input class="field__input mono" id="rateInput" type="text" placeholder="e.g. 5M — blank for full speed" />
+          </section>
+        </div>
+
+        <section class="field">
+          <label class="field__label" for="proxyInput">Proxy</label>
+          <input class="field__input mono" id="proxyInput" type="text" placeholder="socks5://127.0.0.1:1080 — blank for none" />
+        </section>
+
+        <section class="field">
+          <p class="field__label">Include in the file</p>
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="optThumbnail" /><span>Cover art</span></label>
+            <label class="check"><input type="checkbox" id="optMetadata" /><span>Title and artist</span></label>
+            <label class="check"><input type="checkbox" id="optChapters" /><span>Chapters</span></label>
+            <label class="check"><input type="checkbox" id="optSubs" /><span>Subtitles</span></label>
+            <label class="check"><input type="checkbox" id="optSponsor" /><span>Cut sponsor segments</span></label>
+          </div>
+        </section>
+
+        <section class="field">
+          <label class="field__label" for="subLangsInput">Subtitle languages</label>
+          <input class="field__input mono" id="subLangsInput" type="text" placeholder="en.*" />
+        </section>
+
+        <section class="field field--tools">
+          <p class="field__label">Tools</p>
+          <ul class="toollist toollist--compact" id="toolStatusList"></ul>
+          <div class="field__row">
+            <button class="btn btn--quiet" id="updateYtdlpBtn" type="button">Update engine</button>
+            <button class="btn btn--quiet" id="repairBtn" type="button">Download missing tools</button>
+          </div>
+          <p class="field__note" id="toolsNote"></p>
+        </section>
+
+        <section class="field">
+          <p class="field__label">About</p>
+          <p class="field__note" id="aboutNote"></p>
+        </section>
+      </div>
+    </aside>
+
+    <div class="scrim" id="scrim" hidden></div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <template id="jobTemplate">
+      <li class="job" data-state="queued">
+        <div class="job__art">
+          <img class="job__thumb" alt="" />
+        </div>
+        <div class="job__main">
+          <div class="job__top">
+            <p class="job__title"></p>
+            <span class="job__state"></span>
+          </div>
+          <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+            <div class="meter__fill"></div>
+            <div class="meter__head"></div>
+          </div>
+          <p class="job__telemetry mono"></p>
+          <p class="job__error"></p>
+          <pre class="job__log mono" hidden></pre>
+        </div>
+        <div class="job__controls">
+          <button class="iconbtn job__pause" type="button" title="Pause">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3v14H8zm5 0h3v14h-3z"/></svg>
+            <span class="sr-only">Pause</span>
+          </button>
+          <button class="iconbtn job__resume" type="button" title="Resume">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <span class="sr-only">Resume</span>
+          </button>
+          <button class="iconbtn job__reveal" type="button" title="Show in folder">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.1a1.5 1.5 0 0 1 1.06.44L11 6.75h8.5A1.5 1.5 0 0 1 21 8.25v9.25A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+            <span class="sr-only">Show in folder</span>
+          </button>
+          <button class="iconbtn job__logtoggle" type="button" title="Show log">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+            <span class="sr-only">Show log</span>
+          </button>
+          <button class="iconbtn iconbtn--danger job__close" type="button" title="Remove">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6z"/></svg>
+            <span class="sr-only">Remove</span>
+          </button>
+        </div>
+      </li>
+    </template>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

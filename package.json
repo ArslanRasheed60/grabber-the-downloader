@@ -1,0 +1,98 @@
+{
+  "name": "yt-dlp-wrapper",
+  "productName": "Grabber",
+  "version": "1.0.0",
+  "description": "Paste a link, get the video.",
+  "main": "src/main/main.js",
+  "author": "arsla",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "electron test/app.test.js",
+    "fetch:bin": "node scripts/fetch-binaries.js",
+    "dist:win": "node scripts/fetch-binaries.js --platform win32 --arch x64 && electron-builder --win --x64",
+    "dist:mac": "node scripts/fetch-binaries.js --platform darwin --arch arm64 && electron-builder --mac --arm64",
+    "dist:mac-intel": "node scripts/fetch-binaries.js --platform darwin --arch x64 && electron-builder --mac --x64",
+    "pack": "electron-builder --dir"
+  },
+  "build": {
+    "appId": "dev.arsla.grabber",
+    "productName": "Grabber",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "afterPack": "scripts/adhoc-sign.js",
+    "files": [
+      "src/**/*",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*",
+          "!.gitkeep"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "Grabber"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "LSMinimumSystemVersion": "11.0"
+      }
+    },
+    "dmg": {
+      "title": "Grabber ${version}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo"
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3"
+  }
+}
