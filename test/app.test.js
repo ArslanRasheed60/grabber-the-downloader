@@ -381,6 +381,43 @@ function main() {
   check('blank subtitle languages fall back to a default', clean({ subLangs: '  ' }).subLangs === 'en.*');
   check('window bounds cannot be set from the page', clean({ windowBounds: { x: 1 } }).windowBounds === undefined);
 
+  // The matrix above proves a settings key reaches the command line. This proves the
+  // control in the drawer is wired to that key — a checkbox bound to the wrong name,
+  // or restored from a different one, would silently do nothing and pass every test.
+  console.log('every control in Settings is wired to a real setting');
+  const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
+  const page = fs.readFileSync(path.join(rendererDir, 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(rendererDir, 'renderer.js'), 'utf8');
+
+  const drawer = page.slice(page.indexOf('<aside class="drawer"'), page.indexOf('</aside>'));
+  const controls = [...drawer.matchAll(/<(?:input|select)[^>]*\bid="([^"]+)"/g)].map((m) => m[1]);
+  // The folder field is read-only and set by the folder picker, not by typing.
+  const expected = controls.filter((id) => id !== 'destInput');
+
+  const bindings = new Map(
+    [...script.matchAll(/bind\(\$\('([^']+)'\),\s*'([^']+)'/g)].map((m) => [m[1], m[2]])
+  );
+  const restores = new Map(
+    [...script.matchAll(/\$\('([^']+)'\)\.(?:value|checked)\s*=\s*(?:Boolean\()?settings\.(\w+)/g)]
+      .map((m) => [m[1], m[2]])
+  );
+
+  const unbound = expected.filter((id) => !bindings.has(id));
+  check('no control is left unwired', unbound.length === 0, unbound.join(', '));
+
+  const unknown = [...bindings.values()].filter((key) => !(key in store.DEFAULTS));
+  check('every control writes a setting that exists', unknown.length === 0, unknown.join(', '));
+
+  const notRestored = [...bindings.keys()].filter((id) => !restores.has(id));
+  check('every control is repopulated when the drawer opens', notRestored.length === 0, notRestored.join(', '));
+
+  const mismatched = [...bindings.entries()]
+    .filter(([id, key]) => restores.has(id) && restores.get(id) !== key)
+    .map(([id, key]) => `${id}: writes ${key}, reads ${restores.get(id)}`);
+  check('a control reads back the same setting it writes', mismatched.length === 0, mismatched.join(' | '));
+
+  check(`all ${expected.length} settings controls accounted for`, expected.length >= 13, String(expected.length));
+
   const cookieError = friendlyError('ERROR: Could not copy Chrome cookie database', 'https://x.test/v');
   check('a locked cookie database explains itself', /close it completely/i.test(cookieError), cookieError);
   const staleError = friendlyError('ERROR: Unable to extract player response', 'https://x.test/v');
