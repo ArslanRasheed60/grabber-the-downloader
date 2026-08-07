@@ -12,10 +12,10 @@ jobs:
     name: macOS (Apple Silicon)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
@@ -24,7 +24,7 @@ jobs:
         # An arm64 bundle with no signature at all is refused by the kernel, so this
         # is the difference between "warns on first open" and "will not start".
         run: codesign --verify --verbose=2 release/mac-arm64/Grabber.app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: grabber-macos-arm64
           path: |
@@ -36,15 +36,15 @@ jobs:
     name: Windows (x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
       - run: npm run dist:win
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: grabber-windows-x64
           path: release/*.exe
