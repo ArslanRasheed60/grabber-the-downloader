@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('api', {
   openFolder: (dir) => call('shell:open-folder', dir),
   openExternal: (url) => call('shell:open-external', url),
   chooseFolder: () => call('dialog:choose-folder'),
+  chooseCookiesFile: () => call('dialog:choose-cookies-file'),
   readClipboard: () => call('clipboard:read'),
 
   onQueueList: subscribe('queue:list'),

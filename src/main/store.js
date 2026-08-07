@@ -19,6 +19,9 @@ const DEFAULTS = {
   limitRate: '',
   proxy: '',
   cookiesFrom: 'none',
+  // A Netscape-format cookies.txt. Chromium browsers on Windows encrypt their
+  // cookie store in a way yt-dlp cannot read, so this is the reliable way in.
+  cookiesFile: '',
   embedThumbnail: true,
   embedMetadata: true,
   embedChapters: true,
@@ -127,6 +130,13 @@ function sanitizePatch(patch) {
   if (clean.maxConcurrent !== undefined) clean.maxConcurrent = clampInt(clean.maxConcurrent, 1, 8);
   if (clean.concurrentFragments !== undefined) {
     clean.concurrentFragments = clampInt(clean.concurrentFragments, 1, 16);
+  }
+  if (typeof clean.cookiesFile === 'string') {
+    const value = clean.cookiesFile.trim().replace(/^"|"$/g, '');
+    if (value && !fs.existsSync(value)) {
+      throw new Error('There is no file at that path. Pick your cookies file with Browse.');
+    }
+    clean.cookiesFile = value;
   }
   if (typeof clean.subLangs === 'string') clean.subLangs = clean.subLangs.trim() || 'en.*';
   if (typeof clean.downloadDir === 'string') clean.downloadDir = clean.downloadDir.trim();

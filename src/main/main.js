@@ -252,6 +252,22 @@ handle('dialog:choose-folder', async () => {
   return dir;
 });
 
+handle('dialog:choose-cookies-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose your cookies file',
+    filters: [
+      { name: 'Cookies', extensions: ['txt'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+    buttonLabel: 'Use this file',
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  const file = result.filePaths[0];
+  store.updateSettings({ cookiesFile: file });
+  return file;
+});
+
 handle('clipboard:read', () => clipboard.readText());
 
 /* --------------------------------------------------------------- startup */

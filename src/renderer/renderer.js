@@ -694,6 +694,7 @@ function bindSettings() {
   bind($('concurrentInput'), 'maxConcurrent', (n) => n.value);
   bind($('fragmentsInput'), 'concurrentFragments', (n) => n.value);
   bind($('cookiesSelect'), 'cookiesFrom', (n) => n.value);
+  bind($('cookiesFileInput'), 'cookiesFile', (n) => n.value);
   bind($('rateInput'), 'limitRate', (n) => n.value);
   bind($('proxyInput'), 'proxy', (n) => n.value);
   bind($('subLangsInput'), 'subLangs', (n) => n.value);
@@ -711,6 +712,27 @@ function bindSettings() {
         applySettings(state.settings);
         toast('Downloads will go to the new folder', 'ok');
       }
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  });
+
+  $('chooseCookiesBtn').addEventListener('click', async () => {
+    try {
+      const file = await window.api.chooseCookiesFile();
+      if (!file) return;
+      state.settings = await window.api.settings.get();
+      applySettings(state.settings);
+      toast('Grabber will use that cookies file', 'ok');
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  });
+
+  $('clearCookiesBtn').addEventListener('click', async () => {
+    try {
+      state.settings = await window.api.settings.set({ cookiesFile: '' });
+      applySettings(state.settings);
     } catch (err) {
       toast(err.message, 'bad');
     }
@@ -760,6 +782,7 @@ function applySettings(settings, { skipInputs = false } = {}) {
   $('concurrentInput').value = settings.maxConcurrent;
   $('fragmentsInput').value = settings.concurrentFragments;
   $('cookiesSelect').value = settings.cookiesFrom;
+  $('cookiesFileInput').value = settings.cookiesFile || '';
   $('rateInput').value = settings.limitRate || '';
   $('proxyInput').value = settings.proxy || '';
   $('subLangsInput').value = settings.subLangs || 'en.*';
@@ -904,6 +927,13 @@ async function boot() {
     state.info.platform === 'darwin' ? 'platform-mac' : state.info.platform === 'win32' ? 'platform-win' : 'platform-linux'
   );
   el.aboutNote.textContent = `Grabber ${state.info.version} · Electron ${state.info.electron} · ${state.info.platform}-${state.info.arch}`;
+
+  // Say plainly why the browser list mostly does not work on Windows, instead of
+  // letting people discover it one failed download at a time.
+  $('cookiesNote').textContent =
+    state.info.platform === 'win32'
+      ? 'Windows encrypts Chrome, Edge, Brave and Opera cookies, so those cannot be read. Firefox works. Otherwise export a cookies.txt with a browser extension and pick it here — a file set here overrides the browser above.'
+      : 'Only needed for private, age-restricted or members-only videos. A file set here overrides the browser above.';
 
   state.settings = await window.api.settings.get();
   applySettings(state.settings);

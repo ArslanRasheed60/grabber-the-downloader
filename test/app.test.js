@@ -303,7 +303,7 @@ function main() {
   };
 
   const base = {
-    limitRate: '', proxy: '', cookiesFrom: 'none', concurrentFragments: 4,
+    limitRate: '', proxy: '', cookiesFrom: 'none', cookiesFile: '', concurrentFragments: 4,
     embedThumbnail: false, embedMetadata: false, embedChapters: false,
     writeSubs: false, sponsorblock: false, subLangs: 'en.*',
   };
@@ -315,6 +315,26 @@ function main() {
   check('cookies name the browser', valueAfter(argsWith({ ...base, cookiesFrom: 'chrome' }), '--cookies-from-browser') === 'chrome');
   check('"No browser" sends no cookie flag', !argsWith({ ...base, cookiesFrom: 'none' }).includes('--cookies-from-browser'));
   check('connections per video is honoured', valueAfter(argsWith({ ...base, concurrentFragments: 8 }), '--concurrent-fragments') === '8');
+
+  // Chromium browsers on Windows encrypt their cookie store, so a cookies file is the
+  // only route that works. If one is set it has to win over the browser dropdown.
+  const cookieJar = path.join(os.tmpdir(), 'grabber-cookies-test.txt');
+  fs.writeFileSync(cookieJar, '# Netscape HTTP Cookie File\n');
+  const withFile = argsWith({ ...base, cookiesFrom: 'chrome', cookiesFile: cookieJar });
+  check('a cookies file is passed to the engine', valueAfter(withFile, '--cookies') === cookieJar);
+  check('a cookies file overrides the browser choice', !withFile.includes('--cookies-from-browser'));
+  check(
+    'the browser is still used when no file is set',
+    valueAfter(argsWith({ ...base, cookiesFrom: 'firefox' }), '--cookies-from-browser') === 'firefox'
+  );
+  let refusedMissingJar = false;
+  try {
+    store.sanitizePatch({ cookiesFile: path.join(os.tmpdir(), 'grabber-no-such-cookies.txt') });
+  } catch {
+    refusedMissingJar = true;
+  }
+  check('a missing cookies file is refused', refusedMissingJar);
+  fs.rmSync(cookieJar, { force: true });
 
   check('cover art on', argsWith({ ...base, embedThumbnail: true }).includes('--embed-thumbnail'));
   check('cover art off', !argsWith({ ...base }).includes('--embed-thumbnail'));
@@ -418,8 +438,23 @@ function main() {
 
   check(`all ${expected.length} settings controls accounted for`, expected.length >= 13, String(expected.length));
 
-  const cookieError = friendlyError('ERROR: Could not copy Chrome cookie database', 'https://x.test/v');
-  check('a locked cookie database explains itself', /close it completely/i.test(cookieError), cookieError);
+  // These two used to point at each other: "close your browser" and "pick a browser",
+  // which is a loop with no way out on Windows.
+  const locked = friendlyError('ERROR: Could not copy Chrome cookie database', 'https://x.test/v');
+  const encrypted = friendlyError('ERROR: Failed to decrypt with DPAPI', 'https://x.test/v');
+  const botCheck = friendlyError("ERROR: Sign in to confirm you're not a bot", 'https://x.test/v');
+
+  check('a locked cookie file says to close the browser', /close it completely/i.test(locked), locked);
+  check('an encrypted cookie store does not say to close the browser', !/close it/i.test(encrypted), encrypted);
+  check('an encrypted cookie store offers a way that works', /cookies\.txt/i.test(encrypted), encrypted);
+  check('the sign-in message offers a way that works', /cookies\.txt|use cookies from/i.test(botCheck), botCheck);
+  const badJar = friendlyError("ERROR: 'C:\\x\\bad.txt' does not look like a Netscape format cookies file", 'https://x.test/v');
+  check('a malformed cookies file says how to fix it', /re-export/i.test(badJar), badJar);
+  check(
+    'no two cookie messages send you in a circle',
+    !(/pick .*browser/i.test(botCheck) && /close/i.test(botCheck)),
+    botCheck
+  );
   const staleError = friendlyError('ERROR: Unable to extract player response', 'https://x.test/v');
   check('an extractor failure points at Update engine', /update engine/i.test(staleError), staleError);
 

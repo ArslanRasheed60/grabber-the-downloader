@@ -225,7 +225,11 @@ class Downloader extends EventEmitter {
     if (tools.ffmpeg.ok) args.push('--ffmpeg-location', path.dirname(tools.ffmpeg.path));
     if (settings.limitRate) args.push('--limit-rate', String(settings.limitRate));
     if (settings.proxy) args.push('--proxy', String(settings.proxy));
-    if (settings.cookiesFrom && settings.cookiesFrom !== 'none') {
+    // An explicit cookies file wins: it is the only route that works for Chromium
+    // browsers on Windows, so if one is set it should not be second-guessed.
+    if (settings.cookiesFile) {
+      args.push('--cookies', String(settings.cookiesFile));
+    } else if (settings.cookiesFrom && settings.cookiesFrom !== 'none') {
       args.push('--cookies-from-browser', String(settings.cookiesFrom));
     }
 

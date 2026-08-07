@@ -199,6 +199,16 @@
         </div>
 
         <section class="field">
+          <label class="field__label" for="cookiesFileInput">Cookies file</label>
+          <div class="field__row">
+            <input class="field__input mono" id="cookiesFileInput" type="text" placeholder="cookies.txt exported from your browser" />
+            <button class="btn btn--quiet" id="chooseCookiesBtn" type="button">Browse</button>
+            <button class="btn btn--quiet" id="clearCookiesBtn" type="button">Clear</button>
+          </div>
+          <p class="field__note" id="cookiesNote"></p>
+        </section>
+
+        <section class="field">
           <label class="field__label" for="proxyInput">Proxy</label>
           <input class="field__input mono" id="proxyInput" type="text" placeholder="socks5://127.0.0.1:1080" title="Blank means no proxy" />
         </section>

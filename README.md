@@ -107,11 +107,34 @@ comments, filenames and this README use the real name.
 - **Audio only.** One chip switches to audio and converts to MP3, M4A, Opus, FLAC or WAV.
 - **Pause, resume, cancel.** Pausing stops the transfer and keeps the partial file; resuming
   picks up where it left off rather than starting over.
-- **Sign-in-only videos.** Point *Use cookies from* at a browser you are logged into and
-  private, age-restricted and members-only videos work.
+- **Sign-in-only videos.** Point *Use cookies from* at a browser you are signed into, or
+  *Cookies file* at an exported `cookies.txt`. See below — on Windows the browser option
+  mostly does not work, and that is not something Grabber can fix.
 - **Extras.** Cover art, metadata, chapters and subtitles are embedded into the file.
   SponsorBlock segments can be cut automatically.
 - **A log per download.** The list icon on any row opens exactly what yt-dlp reported.
+
+## Cookies, and why YouTube keeps asking you to sign in
+
+YouTube increasingly answers *"Sign in to confirm you're not a bot"* to anyone it does not
+recognise. The fix is to give yt-dlp your cookies. On Windows that is harder than it sounds:
+
+**Chrome, Edge, Brave and Opera will not work on Windows.** Since Chrome 127 the Chromium
+browsers protect their cookie store with App-Bound Encryption, and yt-dlp cannot read it —
+you get `Failed to decrypt with DPAPI`. Closing the browser does not help. This is upstream
+([yt-dlp#10927](https://github.com/yt-dlp/yt-dlp/issues/10927)), not something the app can
+work around. macOS is unaffected.
+
+Two things that do work:
+
+1. **Firefox.** Its cookies are not encrypted this way. Sign into YouTube in Firefox, then
+   set *Use cookies from* → Firefox. Close Firefox first, or its database will be locked.
+2. **A cookies file.** Install a `cookies.txt` extension in whichever browser you are signed
+   into, export while on youtube.com, then point *Cookies file* at the result with **Browse**.
+   A file set here overrides the browser choice. Re-export when it stops working — YouTube
+   cookies expire.
+
+Keep the file to yourself: it grants access to your signed-in session.
 
 ## Keeping yt-dlp current
 

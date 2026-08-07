@@ -13,7 +13,21 @@ const { num, str, scrubToolNames } = require('./util');
 
 const PROBE_TIMEOUT_MS = 120000;
 
+/**
+ * Since Chrome 127 the Chromium browsers encrypt their cookie store on Windows with
+ * App-Bound Encryption, which yt-dlp cannot decrypt. Firefox keeps its cookies in a
+ * plain database, and an exported cookies.txt always works. macOS is unaffected.
+ */
+const COOKIE_FALLBACK =
+  'use Firefox instead, or export a cookies.txt and pick it under "Cookies file" in Settings.';
+
+const COOKIE_ADVICE =
+  process.platform === 'win32'
+    ? `Chrome and Edge keep their cookies encrypted on Windows, so ${COOKIE_FALLBACK}`
+    : 'Open Settings and pick the browser you are signed into under "Use cookies from", or point "Cookies file" at an exported cookies.txt.';
+
 function cookieArgs(settings) {
+  if (settings.cookiesFile) return ['--cookies', String(settings.cookiesFile)];
   const browser = String(settings.cookiesFrom || 'none');
   return browser && browser !== 'none' ? ['--cookies-from-browser', browser] : [];
 }
@@ -37,15 +51,21 @@ function friendlyError(stderr, url) {
   const raw = (line || text.split('\n').filter(Boolean).pop() || '').replace(/^ERROR:\s*/i, '').trim();
 
   if (/confirm (you'?re|your) not a bot|sign in to confirm/i.test(raw)) {
-    return 'This site wants a signed-in session. Open Settings and pick the browser you are logged into under "Use cookies from".';
+    return `This site wants a signed-in session. ${COOKIE_ADVICE}`;
   }
   if (/unsupported url/i.test(raw)) {
     return `No extractor handles ${url}. If the page embeds a video, try the direct link to it.`;
   }
-  // A browser holds a lock on its own cookie store, so "Use cookies from" looks
-  // broken until you close it. Say so, rather than quoting a database error.
-  if (/could not copy.*cookie|cookie database|failed to decrypt|unable to (open|read).*cookie/i.test(raw)) {
-    return 'That browser is holding its cookies open. Close it completely, then try again — or pick "No browser" in Settings.';
+  // Two different cookie failures that need opposite advice. Telling someone to close
+  // their browser when the real problem is encryption sends them round in a circle.
+  if (/does not look like a netscape format cookies file/i.test(raw)) {
+    return 'That file is not a cookies.txt in Netscape format. Re-export it with a cookies.txt browser extension and pick it again.';
+  }
+  if (/failed to decrypt|dpapi|app.?bound/i.test(raw)) {
+    return `Windows encrypts that browser's cookies and the engine cannot read them — closing it will not help, so ${COOKIE_FALLBACK}`;
+  }
+  if (/could not copy.*cookie|cookie database|unable to (open|read).*cookie/i.test(raw)) {
+    return `That browser is holding its cookie file open. Close it completely and try again. If it still fails, its cookies are encrypted — ${COOKIE_FALLBACK}`;
   }
   if (/unable to extract|player response|signature extraction/i.test(raw)) {
     return 'The site changed and the download engine needs updating. Open Settings and choose Update engine.';
