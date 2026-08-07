@@ -15,8 +15,13 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { app } = require('electron');
+
+// Point the app at a throwaway profile before anything reads settings, so the suite
+// can write whatever it likes without touching the real configuration.
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'grabber-test-profile-')));
 
 const failures = [];
 const NAMES_THE_TOOL = /yt[-_ ]?dlp/i;
@@ -206,7 +211,6 @@ function main() {
   // "Show in folder" used to fail outright when the recorded name did not match the
   // file on disk. The fixtures below are real filenames from a real downloads folder.
   console.log('finding a file whose recorded name is wrong');
-  const os = require('os');
   const { asciiKey, idTokenFrom } = require('../src/main/util');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'grabber-test-'));
 
@@ -270,6 +274,118 @@ function main() {
   }
   fs.rmSync(tmp, { recursive: true, force: true });
 
+  // Every switch in Settings has to actually change what gets run. Reading the code
+  // is not evidence; this builds the real command line and looks for the flag.
+  console.log('every setting reaches the command line');
+  const store = require('../src/main/store');
+  const TOOLS = {
+    ffmpeg: { ok: true, path: path.join('C:', 'tools', 'ffmpeg.exe') },
+    ffprobe: { ok: true, path: path.join('C:', 'tools', 'ffprobe.exe') },
+  };
+
+  function argsWith(patch, jobOpts = {}) {
+    store.updateSettings(patch);
+    return downloader.buildArgs(
+      {
+        id: 'args', url: 'https://example.test/v', videoId: 'vid', title: 't',
+        destDir: path.join('C:', 'out'), log: [],
+        opts: {
+          mode: 'video', quality: 'best', container: 'mp4', audioFormat: 'mp3',
+          folderPrefix: null, indexLabel: null, ...jobOpts,
+        },
+      },
+      TOOLS
+    );
+  }
+  const valueAfter = (args, flag) => {
+    const i = args.indexOf(flag);
+    return i === -1 ? null : args[i + 1];
+  };
+
+  const base = {
+    limitRate: '', proxy: '', cookiesFrom: 'none', concurrentFragments: 4,
+    embedThumbnail: false, embedMetadata: false, embedChapters: false,
+    writeSubs: false, sponsorblock: false, subLangs: 'en.*',
+  };
+
+  check('speed limit is passed through', valueAfter(argsWith({ ...base, limitRate: '5M' }), '--limit-rate') === '5M');
+  check('a blank speed limit means no cap', !argsWith({ ...base }).includes('--limit-rate'));
+  check('proxy is passed through', valueAfter(argsWith({ ...base, proxy: 'socks5://127.0.0.1:1080' }), '--proxy') === 'socks5://127.0.0.1:1080');
+  check('no proxy means no flag', !argsWith({ ...base }).includes('--proxy'));
+  check('cookies name the browser', valueAfter(argsWith({ ...base, cookiesFrom: 'chrome' }), '--cookies-from-browser') === 'chrome');
+  check('"No browser" sends no cookie flag', !argsWith({ ...base, cookiesFrom: 'none' }).includes('--cookies-from-browser'));
+  check('connections per video is honoured', valueAfter(argsWith({ ...base, concurrentFragments: 8 }), '--concurrent-fragments') === '8');
+
+  check('cover art on', argsWith({ ...base, embedThumbnail: true }).includes('--embed-thumbnail'));
+  check('cover art off', !argsWith({ ...base }).includes('--embed-thumbnail'));
+  check('metadata on', argsWith({ ...base, embedMetadata: true }).includes('--embed-metadata'));
+  check('metadata off', !argsWith({ ...base }).includes('--embed-metadata'));
+  check('chapters on', argsWith({ ...base, embedChapters: true }).includes('--embed-chapters'));
+  check('chapters off', !argsWith({ ...base }).includes('--embed-chapters'));
+  check('sponsor removal on', argsWith({ ...base, sponsorblock: true }).includes('--sponsorblock-remove'));
+  check('sponsor removal off', !argsWith({ ...base }).includes('--sponsorblock-remove'));
+
+  const subs = argsWith({ ...base, writeSubs: true, subLangs: 'en.*,hi' });
+  check('subtitles are requested and embedded', subs.includes('--embed-subs') && subs.includes('--write-subs'));
+  check('subtitle languages are honoured', valueAfter(subs, '--sub-langs') === 'en.*,hi');
+  check(
+    'subtitles are skipped for an audio-only download',
+    !argsWith({ ...base, writeSubs: true }, { mode: 'audio' }).includes('--embed-subs')
+  );
+
+  const mp4 = argsWith({ ...base }, { container: 'mp4' });
+  check('mp4 asks for an mp4 merge', valueAfter(mp4, '--merge-output-format') === 'mp4');
+  check('mp4 is preferred in the format selector', valueAfter(mp4, '-f').includes('ext=mp4'));
+  check('mkv asks for an mkv merge', valueAfter(argsWith({ ...base }, { container: 'mkv' }), '--merge-output-format') === 'mkv');
+  check('"leave as downloaded" does not remux', !argsWith({ ...base }, { container: 'auto' }).includes('--merge-output-format'));
+  check('a quality cap reaches the format selector', valueAfter(argsWith({ ...base }, { quality: '1080' }), '-f').includes('height<=1080'));
+
+  const mp3 = argsWith({ ...base }, { mode: 'audio', audioFormat: 'mp3' });
+  check('audio-only extracts audio', mp3.includes('--extract-audio'));
+  check('audio format is honoured', valueAfter(mp3, '--audio-format') === 'mp3');
+  check('audio-only does not remux video', !mp3.includes('--merge-output-format'));
+  check(
+    '"keep original" audio does not convert',
+    !argsWith({ ...base }, { mode: 'audio', audioFormat: 'best' }).includes('--audio-format')
+  );
+
+  check('the download folder is passed as a path', valueAfter(argsWith({ ...base }), '--paths').startsWith('home:'));
+  check('ffmpeg is located for the engine', Boolean(valueAfter(argsWith({ ...base }), '--ffmpeg-location')));
+
+  // What the user types is not what the engine should be handed.
+  console.log('settings are checked before they become arguments');
+  const clean = (patch) => store.sanitizePatch(patch);
+  const rejects = (patch) => {
+    try {
+      store.sanitizePatch(patch);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+
+  check('a bare speed limit is read as megabytes, not bytes', clean({ limitRate: '5' }).limitRate === '5M', clean({ limitRate: '5' }).limitRate);
+  check('speed limit units are normalised', clean({ limitRate: '800k' }).limitRate === '800K');
+  check('a decimal speed limit is kept', clean({ limitRate: '2.5M' }).limitRate === '2.5M');
+  check('a blank speed limit stays blank', clean({ limitRate: '   ' }).limitRate === '');
+  check('nonsense in the speed limit is refused', rejects({ limitRate: 'fast please' }));
+
+  check('a good proxy is kept', clean({ proxy: 'socks5://127.0.0.1:1080' }).proxy === 'socks5://127.0.0.1:1080');
+  check('a blank proxy stays blank', clean({ proxy: '' }).proxy === '');
+  check('a proxy with no scheme is refused', rejects({ proxy: '127.0.0.1:1080' }));
+
+  check('downloads at once is clamped down', clean({ maxConcurrent: 99 }).maxConcurrent === 8);
+  check('downloads at once is clamped up', clean({ maxConcurrent: 0 }).maxConcurrent === 1);
+  check('connections per video is clamped', clean({ concurrentFragments: 999 }).concurrentFragments === 16);
+  check('a non-number falls back to the minimum', clean({ maxConcurrent: '' }).maxConcurrent === 1);
+  check('blank subtitle languages fall back to a default', clean({ subLangs: '  ' }).subLangs === 'en.*');
+  check('window bounds cannot be set from the page', clean({ windowBounds: { x: 1 } }).windowBounds === undefined);
+
+  const cookieError = friendlyError('ERROR: Could not copy Chrome cookie database', 'https://x.test/v');
+  check('a locked cookie database explains itself', /close it completely/i.test(cookieError), cookieError);
+  const staleError = friendlyError('ERROR: Unable to extract player response', 'https://x.test/v');
+  check('an extractor failure points at Update engine', /update engine/i.test(staleError), staleError);
+
   console.log('');
   if (failures.length) {
     console.log(`${failures.length} check(s) failed: ${failures.join(', ')}`);
@@ -280,4 +396,11 @@ function main() {
   }
 }
 
-app.whenReady().then(main);
+app.whenReady()
+  .then(main)
+  .catch((err) => {
+    // Without this an assertion that throws leaves Electron running with no window
+    // and no output, which looks like a hang rather than a failure.
+    console.error(`\nthe suite crashed: ${err && err.stack ? err.stack : err}`);
+    app.exit(1);
+  });

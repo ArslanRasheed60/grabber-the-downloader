@@ -32,10 +32,6 @@ const el = {
   pauseAllBtn: $('pauseAllBtn'),
   resumeAllBtn: $('resumeAllBtn'),
   clearBtn: $('clearBtn'),
-  railYtdlp: $('railYtdlp'),
-  railFfmpeg: $('railFfmpeg'),
-  railDest: $('railDest'),
-  railStatus: $('railStatus'),
   settingsBtn: $('settingsBtn'),
   settingsDrawer: $('settingsDrawer'),
   closeSettings: $('closeSettings'),
@@ -209,12 +205,6 @@ function shortVersion(version) {
 async function refreshBinaries() {
   state.binaries = await window.api.binaries.status();
   renderTools(el.toolStatusList, state.binaries);
-  el.railYtdlp.textContent = state.binaries.ytdlp.ok
-    ? `engine ${shortVersion(state.binaries.ytdlp.version)}`
-    : 'engine missing';
-  el.railFfmpeg.textContent = state.binaries.ffmpeg.ok
-    ? `ffmpeg ${shortVersion(state.binaries.ffmpeg.version)}`
-    : 'ffmpeg missing';
   return state.binaries;
 }
 
@@ -459,6 +449,9 @@ function updateCounts(jobs) {
   if (counts.paused) bits.push(`${counts.paused} paused`);
   if (counts.done) bits.push(`${counts.done} done`);
   if (counts.failed) bits.push(`${counts.failed} failed`);
+  // The combined transfer rate used to live on the status bar along the bottom.
+  const speed = state.summary && state.summary.active > 0 ? fmtSpeed(state.summary.speed) : null;
+  if (speed) bits.push(speed);
   el.queueCount.textContent = bits.length ? bits.join(' · ') : 'Nothing queued';
 
   const finished = (counts.done || 0) + (counts.failed || 0) + (counts.canceled || 0);
@@ -672,28 +665,38 @@ function hostOf(url) {
 
 /* --------------------------------------------------------------- settings */
 
+/** Show a field the value that is really in effect, not the one that was typed. */
+function showValue(node, value) {
+  if (node.type === 'checkbox') node.checked = Boolean(value);
+  else node.value = value === null || value === undefined ? '' : value;
+}
+
 function bindSettings() {
   const bind = (node, key, read) => {
     node.addEventListener('change', async () => {
       try {
-        state.settings = await window.api.settings.set({ [key]: read(node) });
-        applySettings(state.settings, { skipInputs: true });
+        const saved = await window.api.settings.set({ [key]: read(node) });
+        state.settings = saved;
+        // Values get clamped and normalised on the way in — "20" becomes 8, "5"
+        // becomes "5M". Leaving the typed text on screen would be a lie about
+        // what the app is going to do.
+        showValue(node, saved[key]);
+        applySettings(saved, { skipInputs: true });
       } catch (err) {
         toast(err.message, 'bad');
+        showValue(node, state.settings[key]);
       }
     });
   };
 
   bind($('containerSelect'), 'container', (n) => n.value);
   bind($('audioSelect'), 'audioFormat', (n) => n.value);
-  bind($('concurrentInput'), 'maxConcurrent', (n) => Math.max(1, Math.min(8, Number(n.value) || 1)));
-  bind($('fragmentsInput'), 'concurrentFragments', (n) =>
-    Math.max(1, Math.min(16, Number(n.value) || 1))
-  );
+  bind($('concurrentInput'), 'maxConcurrent', (n) => n.value);
+  bind($('fragmentsInput'), 'concurrentFragments', (n) => n.value);
   bind($('cookiesSelect'), 'cookiesFrom', (n) => n.value);
-  bind($('rateInput'), 'limitRate', (n) => n.value.trim());
-  bind($('proxyInput'), 'proxy', (n) => n.value.trim());
-  bind($('subLangsInput'), 'subLangs', (n) => n.value.trim() || 'en.*');
+  bind($('rateInput'), 'limitRate', (n) => n.value);
+  bind($('proxyInput'), 'proxy', (n) => n.value);
+  bind($('subLangsInput'), 'subLangs', (n) => n.value);
   bind($('optThumbnail'), 'embedThumbnail', (n) => n.checked);
   bind($('optMetadata'), 'embedMetadata', (n) => n.checked);
   bind($('optChapters'), 'embedChapters', (n) => n.checked);
@@ -750,9 +753,6 @@ function bindSettings() {
 
 function applySettings(settings, { skipInputs = false } = {}) {
   state.settings = settings;
-  el.railDest.textContent = settings.downloadDir;
-  el.railDest.title = `Open ${settings.downloadDir}`;
-
   if (skipInputs) return;
   $('destInput').value = settings.downloadDir;
   $('containerSelect').value = settings.container;
@@ -777,6 +777,8 @@ function openDrawer() {
 }
 
 function closeDrawer() {
+  // Hiding a focused field can swallow its pending change event, so commit first.
+  if (el.settingsDrawer.contains(document.activeElement)) document.activeElement.blur();
   el.settingsDrawer.hidden = true;
   el.scrim.hidden = true;
 }
@@ -845,7 +847,6 @@ function wireUi() {
 
   const openDest = () => window.api.openFolder().catch((err) => toast(err.message, 'bad'));
   el.openFolderBtn.addEventListener('click', openDest);
-  el.railDest.addEventListener('click', openDest);
 
   el.setupInstall.addEventListener('click', runInstall);
   el.setupSkip.addEventListener('click', () => {
@@ -863,14 +864,8 @@ function wireUi() {
   window.api.onQueueDone((job) => toast(`Finished “${trim(job.title)}”`, 'ok'));
   window.api.onQueueSummary((summary) => {
     el.lamp.classList.toggle('is-live', summary.active > 0);
-    if (summary.active > 0) {
-      const speed = fmtSpeed(summary.speed);
-      el.railStatus.textContent = `${summary.active} downloading${speed ? ` · ${speed}` : ''}`;
-    } else if (summary.queued > 0) {
-      el.railStatus.textContent = `${summary.queued} waiting`;
-    } else {
-      el.railStatus.textContent = 'Idle';
-    }
+    state.summary = summary;
+    updateCounts([...state.jobs.values()]);
   });
 
   window.api.onQueueLog(({ id, line }) => {

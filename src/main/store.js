@@ -78,8 +78,65 @@ function flush() {
   }
 }
 
+// The unit is optional — a bare number is the whole point of normalising here.
+const RATE = /^(\d+(?:\.\d+)?)\s*([KMG])?B?\/?S?$/i;
+const PROXY = /^(https?|socks4a?|socks5h?):\/\/\S+$/i;
+
+function clampInt(value, min, max) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Settings arrive from a text field, so they have to be checked before they become
+ * command-line arguments. Two of these are traps rather than typos:
+ *
+ *  - a bare number in the speed limit means bytes per second to the engine, so "5"
+ *    caps the download at 5 B/s and looks exactly like a hang;
+ *  - a malformed proxy is accepted silently and then fails every single download
+ *    with an error that points nowhere near Settings.
+ *
+ * Both now fail loudly at the point of entry instead.
+ */
+function sanitizePatch(patch) {
+  const clean = { ...patch };
+  delete clean.windowBounds;
+
+  if (typeof clean.limitRate === 'string') {
+    const value = clean.limitRate.trim();
+    if (!value) {
+      clean.limitRate = '';
+    } else {
+      const match = RATE.exec(value);
+      if (!match) {
+        throw new Error('Speed limit should look like 5M, 800K or 2.5M. Leave it blank for full speed.');
+      }
+      clean.limitRate = `${match[1]}${(match[2] || 'M').toUpperCase()}`;
+    }
+  }
+
+  if (typeof clean.proxy === 'string') {
+    const value = clean.proxy.trim();
+    if (value && !PROXY.test(value)) {
+      throw new Error('Proxy should look like socks5://127.0.0.1:1080 or http://host:8080. Leave it blank for none.');
+    }
+    clean.proxy = value;
+  }
+
+  if (clean.maxConcurrent !== undefined) clean.maxConcurrent = clampInt(clean.maxConcurrent, 1, 8);
+  if (clean.concurrentFragments !== undefined) {
+    clean.concurrentFragments = clampInt(clean.concurrentFragments, 1, 16);
+  }
+  if (typeof clean.subLangs === 'string') clean.subLangs = clean.subLangs.trim() || 'en.*';
+  if (typeof clean.downloadDir === 'string') clean.downloadDir = clean.downloadDir.trim();
+
+  return clean;
+}
+
 module.exports = {
   DEFAULTS,
+  sanitizePatch,
   getSettings() {
     return { ...settings };
   },

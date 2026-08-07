@@ -126,16 +126,6 @@
       </section>
     </main>
 
-    <footer class="rail">
-      <span class="rail__item" id="railYtdlp">engine —</span>
-      <span class="rail__sep" aria-hidden="true"></span>
-      <span class="rail__item" id="railFfmpeg">ffmpeg —</span>
-      <span class="rail__sep" aria-hidden="true"></span>
-      <button class="rail__item rail__item--link" id="railDest" type="button" title="Open the downloads folder">—</button>
-      <span class="rail__spacer"></span>
-      <span class="rail__item rail__item--live" id="railStatus">Idle</span>
-    </footer>
-
     <aside class="drawer" id="settingsDrawer" hidden aria-label="Settings">
       <div class="drawer__head">
         <h2 class="section-title">Settings</h2>
@@ -204,13 +194,13 @@
 
           <section class="field">
             <label class="field__label" for="rateInput">Speed limit</label>
-            <input class="field__input mono" id="rateInput" type="text" placeholder="e.g. 5M — blank for full speed" />
+            <input class="field__input mono" id="rateInput" type="text" placeholder="5M" title="Blank means full speed" />
           </section>
         </div>
 
         <section class="field">
           <label class="field__label" for="proxyInput">Proxy</label>
-          <input class="field__input mono" id="proxyInput" type="text" placeholder="socks5://127.0.0.1:1080 — blank for none" />
+          <input class="field__input mono" id="proxyInput" type="text" placeholder="socks5://127.0.0.1:1080" title="Blank means no proxy" />
         </section>
 
         <section class="field">

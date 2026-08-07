@@ -35,7 +35,6 @@
   --font-mono: "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   --titlebar-h: 44px;
-  --rail-h: 30px;
   --radius: 4px;
 }
 
@@ -901,56 +900,6 @@ body.platform-mac .titlebar {
   color: var(--ink-mute);
 }
 
-/* ------------------------------------------------------------ status rail */
-
-.rail {
-  position: relative;
-  z-index: 2;
-  flex: 0 0 var(--rail-h);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  background: var(--chassis-2);
-  border-top: 1px solid var(--rail-soft);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-mute);
-}
-
-.rail__item {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rail__item--link {
-  max-width: 40vw;
-  border: 0;
-  background: none;
-  color: var(--ink-mute);
-  cursor: pointer;
-  font: inherit;
-}
-
-.rail__item--link:hover {
-  color: var(--signal);
-}
-
-.rail__item--live {
-  color: var(--ink-dim);
-}
-
-.rail__sep {
-  width: 1px;
-  height: 12px;
-  background: var(--rail);
-}
-
-.rail__spacer {
-  flex: 1 1 auto;
-}
-
 /* ---------------------------------------------------------------- drawer */
 
 /* Both stop below the title bar so the window controls and drag region stay live
@@ -1259,7 +1208,7 @@ select.field__input {
 .toasts {
   position: fixed;
   right: 16px;
-  bottom: calc(var(--rail-h) + 14px);
+  bottom: 16px;
   z-index: 30;
   display: flex;
   flex-direction: column;

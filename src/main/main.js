@@ -159,8 +159,7 @@ handle('app:info', () => ({
 
 handle('settings:get', () => store.getSettings());
 handle('settings:set', (patch) => {
-  const clean = { ...patch };
-  delete clean.windowBounds;
+  const clean = store.sanitizePatch(patch);
   if (clean.downloadDir) {
     try {
       fs.mkdirSync(clean.downloadDir, { recursive: true });

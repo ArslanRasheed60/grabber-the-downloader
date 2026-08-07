@@ -31,8 +31,19 @@ npm run dist:mac   # build a .dmg for Apple Silicon (dist:mac-intel for Intel)
 ```
 
 The app figures out on its own that it is on macOS and fetches the Apple Silicon or Intel
-builds of its tools to match. The first launch of a packaged build needs right-click → Open,
-because it is signed ad-hoc rather than with a Developer ID.
+builds of its tools to match.
+
+If you would rather not build locally, the **Actions** tab does it for you: the `Build`
+workflow produces the `.dmg` on a macOS runner and attaches it to the run. Trigger it with
+*Run workflow*, then download `grabber-macos-arm64` from the finished run.
+
+The build is signed ad-hoc rather than with a Developer ID, so the first launch needs
+right-click → Open. If macOS instead claims the app is damaged, that is the quarantine flag
+from having downloaded it — clear it once:
+
+```bash
+xattr -cr /Applications/Grabber.app
+```
 
 ## Building installers
 

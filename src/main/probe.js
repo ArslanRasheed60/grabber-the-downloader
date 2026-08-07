@@ -42,6 +42,14 @@ function friendlyError(stderr, url) {
   if (/unsupported url/i.test(raw)) {
     return `No extractor handles ${url}. If the page embeds a video, try the direct link to it.`;
   }
+  // A browser holds a lock on its own cookie store, so "Use cookies from" looks
+  // broken until you close it. Say so, rather than quoting a database error.
+  if (/could not copy.*cookie|cookie database|failed to decrypt|unable to (open|read).*cookie/i.test(raw)) {
+    return 'That browser is holding its cookies open. Close it completely, then try again — or pick "No browser" in Settings.';
+  }
+  if (/unable to extract|player response|signature extraction/i.test(raw)) {
+    return 'The site changed and the download engine needs updating. Open Settings and choose Update engine.';
+  }
   if (/private video|members[- ]only|paid members/i.test(raw)) {
     return 'This video is private or members-only. Set "Use cookies from" to a browser with access.';
   }
