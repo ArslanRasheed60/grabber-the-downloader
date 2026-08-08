@@ -60,27 +60,6 @@ function sanitizeSegment(name, max = 120) {
 }
 
 /**
- * The interface never names the underlying tool — it talks about "the download
- * engine". Static copy is written that way; this handles the text we do not author:
- * the engine's own stdout in the log pane, and error text quoted back to the user.
- * Links that carry the name are dropped rather than mangled into dead URLs.
- */
-const ENGINE_LABEL = 'engine';
-
-// Matches the hyphenated name, the bare one, and the underscored module name that
-// shows up in tracebacks.
-const TOOL_NAME = /yt[-_ ]?dlp/gi;
-const TOOL_LINK = /https?:\/\/\S*yt[-_]?dlp\S*/gi;
-
-function scrubToolNames(text) {
-  return String(text)
-    .replace(TOOL_LINK, '')
-    .replace(TOOL_NAME, ENGINE_LABEL)
-    .replace(/ {2,}/g, ' ')
-    .replace(/\s+([.,;])/g, '$1');
-}
-
-/**
  * A filename reduced to the part that survives a bad encoding round-trip.
  * The engine used to write its stdout in the console code page, dropping every
  * character it could not represent, so a path recorded then does not string-match
@@ -151,8 +130,6 @@ function throttle(fn, wait) {
 }
 
 module.exports = {
-  ENGINE_LABEL,
-  scrubToolNames,
   asciiKey,
   idTokenFrom,
   makeId,

@@ -3,7 +3,7 @@
 const { spawn } = require('child_process');
 const binaries = require('./binaries');
 const store = require('./store');
-const { num, str, scrubToolNames } = require('./util');
+const { num, str } = require('./util');
 
 /**
  * Ask yt-dlp what a link actually is before queueing anything.
@@ -62,13 +62,13 @@ function friendlyError(stderr, url) {
     return 'That file is not a cookies.txt in Netscape format. Re-export it with a cookies.txt browser extension and pick it again.';
   }
   if (/failed to decrypt|dpapi|app.?bound/i.test(raw)) {
-    return `Windows encrypts that browser's cookies and the engine cannot read them — closing it will not help, so ${COOKIE_FALLBACK}`;
+    return `Windows encrypts that browser's cookies and yt-dlp cannot read them — closing it will not help, so ${COOKIE_FALLBACK}`;
   }
   if (/could not copy.*cookie|cookie database|unable to (open|read).*cookie/i.test(raw)) {
     return `That browser is holding its cookie file open. Close it completely and try again. If it still fails, its cookies are encrypted — ${COOKIE_FALLBACK}`;
   }
   if (/unable to extract|player response|signature extraction/i.test(raw)) {
-    return 'The site changed and the download engine needs updating. Open Settings and choose Update engine.';
+    return 'The site changed and yt-dlp needs updating. Open Settings and choose Update yt-dlp.';
   }
   if (/private video|members[- ]only|paid members/i.test(raw)) {
     return 'This video is private or members-only. Set "Use cookies from" to a browser with access.';
@@ -85,9 +85,8 @@ function friendlyError(stderr, url) {
   if (/requested format is not available/i.test(raw)) {
     return 'That quality is not published for this video. Try "Best available".';
   }
-  // Nothing matched, so the engine's own words get quoted back — with its name,
-  // and any link that would reveal it, taken out.
-  return scrubToolNames(raw) || 'Grabber could not read this link.';
+  // Nothing matched, so yt-dlp's own words get quoted back.
+  return raw || 'Grabber could not read this link.';
 }
 
 function pickThumbnail(info) {
@@ -149,7 +148,7 @@ function probe(url, { playlist = false, signal } = {}) {
     (tool) =>
       new Promise((resolve, reject) => {
         if (!tool.ok) {
-          return reject(new Error('The download engine is not installed yet. Finish setup first.'));
+          return reject(new Error('yt-dlp is not installed yet. Finish setup first.'));
         }
 
         const args = [
@@ -194,7 +193,7 @@ function probe(url, { playlist = false, signal } = {}) {
           stderr += chunk;
         });
         child.on('error', (err) =>
-          finish(reject, new Error(`Could not start the download engine: ${err.message}`))
+          finish(reject, new Error(`Could not start yt-dlp: ${err.message}`))
         );
 
         child.on('close', (code) => {

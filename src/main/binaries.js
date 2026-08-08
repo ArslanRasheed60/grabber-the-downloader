@@ -54,9 +54,8 @@ const isWindows = process.platform === 'win32';
 const exe = (name) => (isWindows ? `${name}.exe` : name);
 
 const TOOLS = {
-  // `label` is what the interface shows; the file name stays as published upstream.
   ytdlp: {
-    label: 'Download engine',
+    label: 'yt-dlp',
     file: exe('yt-dlp'),
     versionArgs: ['--version'],
     settingKey: 'ytdlpPath',

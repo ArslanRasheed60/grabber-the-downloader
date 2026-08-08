@@ -106,10 +106,10 @@ async function keepToolsOwned() {
     if (stale) {
       announced = true;
       send('app:toast', {
-        message: `The download engine is ${engine.ageDays} days old. Getting the current one…`,
+        message: `yt-dlp is ${engine.ageDays} days old. Getting the current one…`,
       });
       const updated = await binaries.updateYtDlp((event) => send('setup:progress', event));
-      send('app:toast', { message: `Download engine updated to ${updated.version}.`, kind: 'ok' });
+      send('app:toast', { message: `yt-dlp updated to ${updated.version}.`, kind: 'ok' });
     }
 
     const borrowed = ['ytdlp', 'ffmpeg', 'ffprobe'].filter(
@@ -124,7 +124,7 @@ async function keepToolsOwned() {
     // Not fatal — whatever the app resolved at boot still works today. Only speak
     // up if we already promised an update.
     if (announced) {
-      send('app:toast', { message: `Could not update the download engine: ${err.message}`, kind: 'bad' });
+      send('app:toast', { message: `Could not update yt-dlp: ${err.message}`, kind: 'bad' });
     }
   }
 }

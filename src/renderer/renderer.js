@@ -128,7 +128,7 @@ const DEFAULT_HINT = 'Paste one link, or several at once — one per line.';
 const TOOL_BLURB = {
   ytdlp: 'Reads the page and fetches the streams',
   ffmpeg: 'Merges video with audio, converts formats',
-  ffprobe: 'Inspects media — optional, but keeps the engine quiet',
+  ffprobe: 'Inspects media — optional, but keeps yt-dlp quiet',
 };
 
 function renderTools(target, status, progressByTool = {}) {
@@ -213,7 +213,7 @@ async function refreshBinaries() {
 const bootUi = { rows: new Map(), installing: false, checking: false, mode: 'tools' };
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const BOOT_NAMES = { ytdlp: 'Download engine', ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' };
+const BOOT_NAMES = { ytdlp: 'yt-dlp', ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' };
 
 function osLabel(platform) {
   if (platform === 'win32') return 'Windows';
@@ -897,12 +897,12 @@ function bindSettings() {
   $('updateYtdlpBtn').addEventListener('click', async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
-    el.toolsNote.textContent = 'Downloading the latest engine…';
+    el.toolsNote.textContent = 'Downloading the latest yt-dlp…';
     try {
       const tool = await window.api.binaries.updateYtDlp();
       await refreshBinaries();
       el.toolsNote.textContent = `Now running ${shortVersion(tool.version)}.`;
-      toast('Engine updated', 'ok');
+      toast('yt-dlp updated', 'ok');
     } catch (err) {
       el.toolsNote.textContent = err.message;
       toast(err.message, 'bad');

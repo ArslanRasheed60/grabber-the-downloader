@@ -24,7 +24,6 @@ const { app } = require('electron');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'grabber-test-profile-')));
 
 const failures = [];
-const NAMES_THE_TOOL = /yt[-_ ]?dlp/i;
 
 function check(name, condition, detail) {
   if (condition) {
@@ -167,46 +166,19 @@ function main() {
   check('a job deleted mid-download does not come back', !revived);
   check('a deleted job is not filed into history', ghost.state === 'downloading', ghost.state);
 
-  // The interface talks about "the download engine" and never names the tool behind
-  // it — including in text the app does not author, like engine stdout in the log.
-  console.log('the interface never names the underlying tool');
-  const { scrubToolNames } = require('../src/main/util');
+  // The boot check must SAY yt-dlp — hiding it behind a generic label made users
+  // think the app never checked for it at all. Field-tested conclusion, do not undo.
+  console.log('the system check names yt-dlp openly');
   const { friendlyError } = require('../src/main/probe');
   const binaries = require('../src/main/binaries');
 
-  const raw = [
-    'yt-dlp',
-    'YT-DLP',
-    'ytdlp',
-    'yt_dlp',
-    'Yt-Dlp.exe',
-    'File "yt_dlp\\extractor\\common.py", line 1',
-    'ERROR: see https://github.com/yt-dlp/yt-dlp/wiki/FAQ for help',
-    '$ engine --ffmpeg-location C:\\WinGet\\Packages\\yt-dlp.FFmpeg_x\\bin',
-  ];
-  const leaked = raw.map(scrubToolNames).filter((line) => NAMES_THE_TOOL.test(line));
-  check('engine output is scrubbed before it reaches the log', leaked.length === 0, leaked.join(' | '));
+  check('the tool label is yt-dlp', binaries.TOOLS.ytdlp.label === 'yt-dlp', binaries.TOOLS.ytdlp.label);
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
   check(
-    'a link that would name it is dropped, not left dead',
-    !scrubToolNames('see https://github.com/yt-dlp/yt-dlp/wiki now').includes('github'),
-    scrubToolNames('see https://github.com/yt-dlp/yt-dlp/wiki now')
+    "the boot row is named yt-dlp",
+    /ytdlp:\s*'yt-dlp'/.test(rendererSrc),
+    (rendererSrc.match(/BOOT_NAMES = \{[^}]*\}/) || [''])[0]
   );
-  check(
-    'quoted error text is scrubbed',
-    !NAMES_THE_TOOL.test(friendlyError('ERROR: yt-dlp could not do the thing', 'https://x.test/v')),
-    friendlyError('ERROR: yt-dlp could not do the thing', 'https://x.test/v')
-  );
-  check(
-    'the engine carries a generic label',
-    !NAMES_THE_TOOL.test(binaries.TOOLS.ytdlp.label),
-    binaries.TOOLS.ytdlp.label
-  );
-
-  // Strip tags so attributes and element ids are ignored and only on-screen text is left.
-  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
-  const onScreen = html.replace(/<[^>]*>/g, ' ');
-  const named = onScreen.split('\n').filter((line) => NAMES_THE_TOOL.test(line));
-  check('no visible copy in the page names the tool', named.length === 0, named.join(' | '));
 
   // "Show in folder" used to fail outright when the recorded name did not match the
   // file on disk. The fixtures below are real filenames from a real downloads folder.
@@ -477,7 +449,7 @@ function main() {
     botCheck
   );
   const staleError = friendlyError('ERROR: Unable to extract player response', 'https://x.test/v');
-  check('an extractor failure points at Update engine', /update engine/i.test(staleError), staleError);
+  check('an extractor failure points at Update yt-dlp', /update yt-dlp/i.test(staleError), staleError);
 
   console.log('');
   if (failures.length) {

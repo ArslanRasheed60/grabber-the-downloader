@@ -11,7 +11,6 @@ const {
   num,
   sanitizeSegment,
   escapeOutputLiteral,
-  scrubToolNames,
   asciiKey,
   idTokenFrom,
 } = require('./util');
@@ -103,9 +102,7 @@ class Downloader extends EventEmitter {
   }
 
   addLog(job, line) {
-    // The log pane shows the engine's own output, so it gets scrubbed too. Parsing
-    // in consumeLine runs against the raw line, not this copy.
-    const text = scrubToolNames(String(line).replace(/\r/g, '').trimEnd());
+    const text = String(line).replace(/\r/g, '').trimEnd();
     if (!text) return;
     job.log.push(text);
     if (job.log.length > MAX_LOG_LINES) job.log.splice(0, job.log.length - MAX_LOG_LINES);
@@ -309,7 +306,7 @@ class Downloader extends EventEmitter {
     ]);
 
     if (!ytdlp.ok) {
-      this.fail(job, 'The download engine is not installed yet. Finish setup first.');
+      this.fail(job, 'yt-dlp is not installed yet. Finish setup first.');
       return;
     }
     if (this.jobs.get(job.id) !== job || job.state !== 'starting') return;
@@ -322,7 +319,7 @@ class Downloader extends EventEmitter {
     }
 
     const args = this.buildArgs(job, { ffmpeg, ffprobe });
-    this.addLog(job, `$ engine ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
+    this.addLog(job, `$ yt-dlp ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
 
     let child;
     try {
@@ -331,7 +328,7 @@ class Downloader extends EventEmitter {
         detached: process.platform !== 'win32',
       });
     } catch (err) {
-      this.fail(job, `Could not start the download engine: ${err.message}`);
+      this.fail(job, `Could not start yt-dlp: ${err.message}`);
       return;
     }
 
@@ -368,7 +365,7 @@ class Downloader extends EventEmitter {
 
     child.on('error', (err) => {
       this.children.delete(job.id);
-      this.fail(job, `The download engine stopped unexpectedly: ${err.message}`);
+      this.fail(job, `yt-dlp stopped unexpectedly: ${err.message}`);
     });
 
     child.on('close', (code) => {
@@ -559,7 +556,7 @@ class Downloader extends EventEmitter {
 
     const detail = job.lastError
       ? require('./probe').friendlyError(job.lastError, job.url)
-      : `The download engine stopped with code ${code}.`;
+      : `yt-dlp stopped with code ${code}.`;
     this.fail(job, detail);
   }
 
