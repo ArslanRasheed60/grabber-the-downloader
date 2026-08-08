@@ -25,6 +25,7 @@ function subscribe(channel) {
 
 contextBridge.exposeInMainWorld('api', {
   appInfo: () => call('app:info'),
+  checkStorage: () => call('app:check-storage'),
 
   settings: {
     get: () => call('settings:get'),

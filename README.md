@@ -13,9 +13,16 @@ npm install
 npm start
 ```
 
-On first launch, Grabber checks for `yt-dlp` and `ffmpeg`. If they are missing it downloads
-them into its own application-data folder and reports progress while it does. Nothing is
-installed system-wide and nothing already on your machine is modified.
+Every launch opens with a system check — the OS, the download folder, and each tool the app
+needs, checked in front of you. If anything is missing, one click installs it into Grabber's
+own application-data folder: by direct download first, and if that cannot get through, via
+`winget` on Windows or Homebrew on macOS. Nothing is installed system-wide and nothing
+already on your machine is modified.
+
+The app also refuses to stay dependent on tools it does not own. If a check finds it
+borrowing a system-installed copy from PATH, it quietly installs its own — so uninstalling
+the system one later cannot break the app. If a tool vanishes mid-session, the next download
+attempt reopens the system check instead of failing with an error.
 
 ### On a Mac
 

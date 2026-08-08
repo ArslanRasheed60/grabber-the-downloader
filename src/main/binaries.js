@@ -97,9 +97,28 @@ function isExecutableFile(file) {
   }
 }
 
+/**
+ * Places tools live that PATH may not mention. On macOS this is load-bearing, not a
+ * nicety: a GUI app launched from Finder gets a minimal PATH without /opt/homebrew/bin,
+ * so a brew-installed ffmpeg is invisible unless we look for it ourselves. On Windows,
+ * winget links new installs here, and the current process's PATH predates them.
+ */
+function wellKnownDirs() {
+  if (isWindows) {
+    return [path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Links')];
+  }
+  if (process.platform === 'darwin') {
+    return ['/opt/homebrew/bin', '/usr/local/bin'];
+  }
+  return ['/usr/local/bin', path.join(os.homedir(), '.local', 'bin')];
+}
+
 /** Walk PATH ourselves — cheaper and more predictable than shelling out to where/which. */
 function findOnPath(fileName) {
-  const dirs = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const dirs = [
+    ...String(process.env.PATH || '').split(path.delimiter),
+    ...wellKnownDirs(),
+  ].filter(Boolean);
   const candidates = isWindows
     ? [fileName, ...String(process.env.PATHEXT || '.EXE;.CMD;.BAT')
         .split(';')
@@ -264,6 +283,101 @@ function clearMacRestrictions(file) {
  * Download whatever is missing. onEvent reports {tool, label, phase, received, total, percent}
  * so onboarding can show real progress instead of a spinner.
  */
+/* ------------------------------------------------ package-manager fallback */
+
+/**
+ * The direct download is the primary route: no admin rights, no package manager,
+ * works the same everywhere. These run only when it fails — a firewall that blocks
+ * GitHub but allows winget/brew traffic is the typical reason.
+ */
+const WINGET_ID = { ytdlp: 'yt-dlp.yt-dlp', ffmpeg: 'Gyan.FFmpeg', ffprobe: 'Gyan.FFmpeg' };
+const BREW_PKG = { ytdlp: 'yt-dlp', ffmpeg: 'ffmpeg', ffprobe: 'ffmpeg' };
+
+function packageManagerPlan(tool, platform = process.platform) {
+  if (platform === 'win32') {
+    return [
+      {
+        manager: 'winget',
+        cmd: 'winget',
+        args: [
+          'install',
+          '--id',
+          WINGET_ID[tool],
+          '--exact',
+          '--silent',
+          '--accept-package-agreements',
+          '--accept-source-agreements',
+          '--disable-interactivity',
+        ],
+      },
+    ];
+  }
+  if (platform === 'darwin') {
+    return [{ manager: 'brew', cmd: 'brew', args: ['install', BREW_PKG[tool]] }];
+  }
+  return [];
+}
+
+function runCommand(cmd, args, timeoutMs) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(cmd, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      return resolve({ ok: false, error: err.message });
+    }
+    let output = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve({ ok: false, error: 'took too long' });
+    }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      output += chunk;
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: err.code === 'ENOENT' ? 'not installed' : err.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ ok: code === 0, error: code === 0 ? null : `exited with ${code}`, output });
+    });
+  });
+}
+
+async function installViaPackageManager(tool, onEvent) {
+  const meta = TOOLS[tool];
+  for (const step of packageManagerPlan(tool)) {
+    onEvent({ tool, label: meta.label, phase: 'pm', manager: step.manager });
+    const result = await runCommand(step.cmd, step.args, 8 * 60 * 1000);
+    if (!result.ok) {
+      onEvent({ tool, label: meta.label, phase: 'pm-failed', manager: step.manager, error: result.error });
+      continue;
+    }
+    // The install landed somewhere PATH may not know yet; wellKnownDirs covers it.
+    versionCache.clear();
+    const found = locate(tool);
+    if (found.path) {
+      const version = await runVersion(found.path, meta.versionArgs);
+      if (version) {
+        onEvent({ tool, label: meta.label, phase: 'done', percent: 100, version, method: step.manager });
+        return { tool, ok: true, path: found.path, version, method: step.manager };
+      }
+    }
+    onEvent({
+      tool,
+      label: meta.label,
+      phase: 'pm-failed',
+      manager: step.manager,
+      error: 'finished but the tool did not appear',
+    });
+  }
+  return null;
+}
+
 /** A download interrupted by a quit or a crash leaves a .part file behind. */
 async function sweepPartials() {
   try {
@@ -279,20 +393,12 @@ async function sweepPartials() {
   }
 }
 
-async function install(tools, onEvent = () => {}) {
-  await sweepPartials();
-  const results = [];
-  for (const tool of tools) {
-    const meta = TOOLS[tool];
-    const url = downloadUrlFor(tool);
-    if (!url) {
-      results.push({
-        tool,
-        ok: false,
-        error: `${meta.label} has no build available for ${platformKey}.`,
-      });
-      continue;
-    }
+async function installOne(tool, onEvent) {
+  const meta = TOOLS[tool];
+  const url = downloadUrlFor(tool);
+  let directError = null;
+
+  if (url) {
     const destination = path.join(managedDir(), meta.file);
     onEvent({ tool, label: meta.label, phase: 'start', received: 0, total: null, percent: 0 });
     try {
@@ -310,14 +416,43 @@ async function install(tools, onEvent = () => {}) {
       versionCache.delete(destination);
       const version = await runVersion(destination, meta.versionArgs);
       if (!version) throw new Error(`${meta.label} downloaded but would not run on this machine.`);
-      onEvent({ tool, label: meta.label, phase: 'done', percent: 100, version });
-      results.push({ tool, ok: true, path: destination, version });
+      onEvent({ tool, label: meta.label, phase: 'done', percent: 100, version, method: 'download' });
+      return { tool, ok: true, path: destination, version, method: 'download' };
     } catch (err) {
-      onEvent({ tool, label: meta.label, phase: 'error', error: err.message });
-      results.push({ tool, ok: false, error: err.message });
+      directError = err.message;
+      onEvent({ tool, label: meta.label, phase: 'fallback', error: err.message });
     }
+  } else {
+    directError = `${meta.label} has no direct download for ${platformKey}.`;
   }
-  return results;
+
+  const viaManager = await installViaPackageManager(tool, onEvent);
+  if (viaManager) return viaManager;
+
+  const error = directError || `${meta.label} could not be installed.`;
+  onEvent({ tool, label: meta.label, phase: 'error', error });
+  return { tool, ok: false, error };
+}
+
+/**
+ * Installs are serialized. Two paths can ask at once — the boot screen's button and
+ * the background self-heal — and both write the same temp file for a given tool, so
+ * letting them interleave risks a corrupt binary.
+ */
+let installLock = Promise.resolve();
+
+function install(tools, onEvent = () => {}) {
+  const run = async () => {
+    await sweepPartials();
+    const results = [];
+    for (const tool of tools) {
+      results.push(await installOne(tool, onEvent));
+    }
+    return results;
+  };
+  const next = installLock.then(run, run);
+  installLock = next.catch(() => {});
+  return next;
 }
 
 /** Install only what is actually missing. */
@@ -352,6 +487,8 @@ module.exports = {
   platformKey,
   ytDlpAgeDays,
   STALE_AFTER_DAYS,
+  wellKnownDirs,
+  packageManagerPlan,
   managedDir,
   bundledDir,
   tempDir,

@@ -448,6 +448,27 @@ function main() {
   check('an encrypted cookie store does not say to close the browser', !/close it/i.test(encrypted), encrypted);
   check('an encrypted cookie store offers a way that works', /cookies\.txt/i.test(encrypted), encrypted);
   check('the sign-in message offers a way that works', /cookies\.txt|use cookies from/i.test(botCheck), botCheck);
+  // The one-click installer falls back to the platform's package manager when the
+  // direct download cannot get through. The commands are built per-OS.
+  console.log('install fallbacks match the operating system');
+  const winPlan = binaries.packageManagerPlan('ytdlp', 'win32');
+  check('windows falls back to winget', winPlan.length === 1 && winPlan[0].cmd === 'winget', JSON.stringify(winPlan));
+  check('winget is given the right package', winPlan[0].args.includes('yt-dlp.yt-dlp'));
+  check(
+    'winget cannot prompt mid-install',
+    winPlan[0].args.includes('--silent') && winPlan[0].args.includes('--disable-interactivity')
+  );
+  const macPlan = binaries.packageManagerPlan('ffmpeg', 'darwin');
+  check('macos falls back to brew', macPlan.length === 1 && macPlan[0].cmd === 'brew', JSON.stringify(macPlan));
+  check('brew is given the right package', macPlan[0].args.join(' ') === 'install ffmpeg');
+  check('ffprobe rides along with the ffmpeg package', binaries.packageManagerPlan('ffprobe', 'win32')[0].args.includes('Gyan.FFmpeg'));
+  check('linux has no package-manager fallback', binaries.packageManagerPlan('ytdlp', 'linux').length === 0);
+  check(
+    'winget-linked installs are findable without a new PATH',
+    process.platform !== 'win32' || binaries.wellKnownDirs().some((d) => /WinGet[\\/]+Links/i.test(d)),
+    JSON.stringify(binaries.wellKnownDirs())
+  );
+
   const badJar = friendlyError("ERROR: 'C:\\x\\bad.txt' does not look like a Netscape format cookies file", 'https://x.test/v');
   check('a malformed cookies file says how to fix it', /re-export/i.test(badJar), badJar);
   check(

@@ -9,8 +9,8 @@ const el = {
   setupInstall: $('setupInstall'),
   setupSkip: $('setupSkip'),
   setupNote: $('setupNote'),
-  setupLede: $('setupLede'),
-  toolList: $('toolList'),
+  bootChecks: $('bootChecks'),
+  bootActions: $('bootActions'),
   toolStatusList: $('toolStatusList'),
   lamp: $('lamp'),
   urlInput: $('urlInput'),
@@ -208,38 +208,185 @@ async function refreshBinaries() {
   return state.binaries;
 }
 
-/* -------------------------------------------------------------- onboarding */
+/* --------------------------------- boot: logo, system check, one-click install */
 
-const setupProgress = {};
+const bootUi = { rows: new Map(), installing: false, checking: false, mode: 'tools' };
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function runInstall() {
-  el.setupInstall.disabled = true;
-  el.setupSkip.disabled = true;
-  el.setupNote.className = 'setup__note';
-  el.setupNote.textContent = 'Fetching from GitHub…';
+const BOOT_NAMES = { ytdlp: 'Download engine', ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' };
+
+function osLabel(platform) {
+  if (platform === 'win32') return 'Windows';
+  if (platform === 'darwin') return 'macOS';
+  return 'Linux';
+}
+
+function shortPath(dir) {
+  const text = String(dir || '');
+  return text.length > 38 ? `…${text.slice(-35)}` : text;
+}
+
+function setBootRow(key, name, value, tone = '') {
+  let row = bootUi.rows.get(key);
+  if (!row) {
+    row = document.createElement('li');
+    row.className = 'bootcheck__row';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'bootcheck__name';
+    const dots = document.createElement('span');
+    dots.className = 'bootcheck__dots';
+    const valueEl = document.createElement('span');
+    valueEl.className = 'bootcheck__value';
+    row.append(nameEl, dots, valueEl);
+    el.bootChecks.append(row);
+    bootUi.rows.set(key, row);
+  }
+  row.querySelector('.bootcheck__name').textContent = name;
+  row.querySelector('.bootcheck__value').textContent = value;
+  row.className = `bootcheck__row${tone ? ` is-${tone}` : ''}`;
+}
+
+function bootNote(message, isError = false) {
+  el.setupNote.textContent = message;
+  el.setupNote.className = `boot__note${isError ? ' is-error' : ''}`;
+}
+
+function describeTool(tool, key) {
+  if (!tool.ok) {
+    // ffprobe is nice-to-have; a machine without it still downloads fine.
+    return key === 'ffprobe' ? ['optional', ''] : ['missing — will be installed', 'bad'];
+  }
+  return [`${shortVersion(tool.version)} · ${sourceLabel(tool.source)}`, 'ok'];
+}
+
+/**
+ * The power-on self-test. Runs on every launch — and again if the engine
+ * vanishes mid-session — so a tool uninstalled out from under the app is
+ * caught here instead of surfacing as a broken download.
+ */
+async function runSystemCheck() {
+  // Failed jobs and a user retry can all ask for a check at once; one is plenty.
+  if (bootUi.checking) return;
+  bootUi.checking = true;
   try {
-    const status = await window.api.binaries.install();
-    state.binaries = status;
-    renderTools(el.toolList, status, setupProgress);
-    await refreshBinaries();
-    el.setupNote.textContent = 'Ready.';
-    setTimeout(() => {
-      el.setup.hidden = true;
-      el.urlInput.focus();
-    }, 500);
-  } catch (err) {
-    el.setupNote.className = 'setup__note is-error';
-    el.setupNote.textContent = err.message;
-    el.setupInstall.textContent = 'Try again';
-    el.setupInstall.disabled = false;
-    el.setupSkip.disabled = false;
+    await runSystemCheckInner();
+  } finally {
+    bootUi.checking = false;
   }
 }
 
-function showSetup(status) {
+async function runSystemCheckInner() {
+  // Focus must not stay behind the overlay, where Enter would drive hidden controls.
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   el.setup.hidden = false;
-  renderTools(el.toolList, status, setupProgress);
-  runInstall();
+  el.setup.classList.remove('is-leaving', 'is-ready', 'is-blocked');
+  el.setup.classList.add('is-checking');
+  el.bootActions.hidden = true;
+  el.setupSkip.hidden = true;
+  el.setupInstall.disabled = false;
+  el.setupInstall.textContent = 'Install missing tools';
+  bootNote('');
+  el.bootChecks.replaceChildren();
+  bootUi.rows.clear();
+
+  setBootRow('os', 'System', `${osLabel(state.info.platform)} · ${state.info.arch}`, 'ok');
+  await pause(150);
+
+  const storage = await window.api.checkStorage().catch(() => ({ ok: false, dir: '' }));
+  setBootRow(
+    'storage',
+    'Save location',
+    storage.ok ? shortPath(storage.dir) : 'not writable',
+    storage.ok ? 'ok' : 'bad'
+  );
+  await pause(150);
+
+  for (const key of ['ytdlp', 'ffmpeg', 'ffprobe']) setBootRow(key, BOOT_NAMES[key], 'checking…', 'busy');
+  const status = await refreshBinaries();
+  for (const key of ['ytdlp', 'ffmpeg', 'ffprobe']) {
+    const [value, tone] = describeTool(status[key], key);
+    setBootRow(key, BOOT_NAMES[key], value, tone);
+    await pause(120);
+  }
+
+  if (status.ready && storage.ok) {
+    el.setup.classList.remove('is-checking');
+    el.setup.classList.add('is-ready');
+    await pause(550);
+    dismissBoot();
+    return;
+  }
+
+  el.setup.classList.remove('is-checking');
+  el.setup.classList.add('is-blocked');
+  el.bootActions.hidden = false;
+
+  if (!status.ready) {
+    bootUi.mode = 'tools';
+    el.setupInstall.textContent = 'Install missing tools';
+    bootNote('One click installs them into Grabber’s own folder. Nothing else on this computer changes.');
+  } else {
+    bootUi.mode = 'storage';
+    el.setupInstall.textContent = 'Choose a folder';
+    bootNote(`Grabber cannot write to ${storage.dir || 'the download folder'}. Pick somewhere else to save downloads.`);
+  }
+}
+
+async function runInstallFlow() {
+  if (bootUi.installing) return;
+  bootUi.installing = true;
+  el.setupInstall.disabled = true;
+  el.setupSkip.hidden = true;
+  el.setup.classList.remove('is-blocked');
+  el.setup.classList.add('is-checking');
+  bootNote('Installing — a one-time step.');
+  try {
+    await window.api.binaries.install();
+    bootUi.installing = false;
+    // Re-run the whole check so "ready" is a fresh observation, not an assumption.
+    await runSystemCheck();
+  } catch (err) {
+    bootUi.installing = false;
+    el.setup.classList.remove('is-checking');
+    el.setup.classList.add('is-blocked');
+    bootNote(err.message, true);
+    el.bootActions.hidden = false;
+    el.setupInstall.disabled = false;
+    el.setupInstall.textContent = 'Try again';
+    el.setupSkip.hidden = false;
+  }
+}
+
+function dismissBoot() {
+  el.setup.classList.add('is-leaving');
+  setTimeout(() => {
+    el.setup.hidden = true;
+    el.urlInput.focus();
+  }, 470);
+}
+
+/** Live install progress, written straight into the check rows. */
+function onBootProgress(event) {
+  if (el.setup.hidden) return;
+  // The background self-heal emits the same events; a check that just came up
+  // "ready" must not have its rows overwritten mid-dismissal by that download.
+  if (!bootUi.installing && !el.setup.classList.contains('is-blocked')) return;
+  const name = BOOT_NAMES[event.tool] || event.label || event.tool;
+  if (event.phase === 'downloading') {
+    const detail =
+      event.percent !== null && event.percent !== undefined
+        ? `downloading ${event.percent.toFixed(0)}%`
+        : `downloading ${fmtBytes(event.received) || ''}`;
+    setBootRow(event.tool, name, detail.trim(), 'busy');
+  } else if (event.phase === 'fallback') {
+    setBootRow(event.tool, name, 'trying another way…', 'busy');
+  } else if (event.phase === 'pm') {
+    setBootRow(event.tool, name, `installing via ${event.manager}…`, 'busy');
+  } else if (event.phase === 'done') {
+    setBootRow(event.tool, name, `${shortVersion(event.version)} · installed`, 'ok');
+  } else if (event.phase === 'error') {
+    setBootRow(event.tool, name, 'failed', 'bad');
+  }
 }
 
 /* ------------------------------------------------------------------- jobs */
@@ -428,6 +575,9 @@ function renderQueue(jobs) {
 
 function patchJob(job) {
   state.jobs.set(job.id, job);
+  if (job.state === 'failed' && /not installed yet/i.test(job.error || '') && el.setup.hidden) {
+    runSystemCheck();
+  }
   const row = state.rows.get(job.id);
   if (!row) {
     renderQueue([...state.jobs.values()]);
@@ -606,7 +756,13 @@ async function handleSubmit() {
       }
     }
   } catch (err) {
-    hint(err.message, 'error');
+    // The engine can vanish mid-session — uninstalled out from under us. That is
+    // the boot screen's problem to solve, not an error the user can act on here.
+    if (/not installed yet/i.test(err.message)) {
+      runSystemCheck();
+    } else {
+      hint(err.message, 'error');
+    }
   } finally {
     state.busy = false;
     el.analyzeBtn.disabled = false;
@@ -871,11 +1027,25 @@ function wireUi() {
   const openDest = () => window.api.openFolder().catch((err) => toast(err.message, 'bad'));
   el.openFolderBtn.addEventListener('click', openDest);
 
-  el.setupInstall.addEventListener('click', runInstall);
-  el.setupSkip.addEventListener('click', () => {
-    el.setup.hidden = true;
-    el.urlInput.focus();
+  el.setupInstall.addEventListener('click', () => {
+    if (bootUi.mode === 'storage') {
+      // The overlay stays put behind the folder dialog: the check re-runs after,
+      // and only a folder that is actually writable lets it dismiss.
+      window.api
+        .chooseFolder()
+        .then(async (dir) => {
+          if (dir) {
+            state.settings = await window.api.settings.get();
+            applySettings(state.settings);
+          }
+          await runSystemCheck();
+        })
+        .catch((err) => toast(err.message, 'bad'));
+      return;
+    }
+    runInstallFlow();
   });
+  el.setupSkip.addEventListener('click', dismissBoot);
 
   window.api.onToast(({ message, kind }) => toast(message, kind || ''));
   window.api.onBinariesChanged(() => {
@@ -901,19 +1071,7 @@ function wireUi() {
     if (atBottom) pane.scrollTop = pane.scrollHeight;
   });
 
-  window.api.onSetupProgress((event) => {
-    setupProgress[event.tool] = event;
-    if (state.binaries) {
-      renderTools(el.toolList, state.binaries, setupProgress);
-      renderTools(el.toolStatusList, state.binaries, setupProgress);
-    }
-    if (event.phase === 'downloading' && !el.setup.hidden) {
-      const size = fmtBytes(event.received);
-      el.setupNote.textContent = `${event.label} — ${size || 'downloading'}${
-        event.percent ? ` (${event.percent.toFixed(0)}%)` : ''
-      }`;
-    }
-  });
+  window.api.onSetupProgress(onBootProgress);
 }
 
 /* ------------------------------------------------------------------- boot */
@@ -937,16 +1095,10 @@ async function boot() {
 
   state.settings = await window.api.settings.get();
   applySettings(state.settings);
-
-  const status = await refreshBinaries();
   renderQueue(await window.api.queue.list());
 
-  if (!status.ready) {
-    showSetup(status);
-  } else {
-    el.setup.hidden = true;
-    el.urlInput.focus();
-  }
+  // The overlay is already on screen from first paint; now give it its content.
+  await runSystemCheck();
 }
 
 boot().catch((err) => {

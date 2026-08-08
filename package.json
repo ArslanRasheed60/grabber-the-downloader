@@ -1,7 +1,7 @@
 {
   "name": "yt-dlp-wrapper",
   "productName": "Grabber",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Paste a link, get the video.",
   "main": "src/main/main.js",
   "author": "arsla",

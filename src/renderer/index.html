@@ -10,23 +10,28 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- First run: fetch the tools the app needs, then get out of the way. -->
-    <div class="setup" id="setup" hidden>
-      <div class="setup__panel">
-        <p class="eyebrow">First run</p>
-        <h1 class="setup__title">Setting up</h1>
-        <p class="setup__lede" id="setupLede">
-          Grabber needs a couple of small tools to fetch and merge video. It downloads them
-          once, into its own folder. Nothing else on your computer changes.
-        </p>
-
-        <ul class="toollist" id="toolList"></ul>
-
-        <div class="setup__actions">
-          <button class="btn btn--primary" id="setupInstall" type="button">Download tools</button>
-          <button class="btn btn--ghost" id="setupSkip" type="button">Continue without them</button>
+    <!-- Every launch opens here: the mark lights up, the system check runs, and the
+         main interface appears only once the machine is ready to download. -->
+    <div class="boot" id="setup">
+      <div class="boot__stage">
+        <div class="bootmark" id="bootMark" aria-hidden="true">
+          <div class="bootmark__arrow">
+            <span class="bootmark__stem"></span>
+            <span class="bootmark__head"></span>
+          </div>
+          <div class="bootmark__tray">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
         </div>
-        <p class="setup__note" id="setupNote"></p>
+        <p class="boot__wordmark">Grabber</p>
+
+        <ul class="bootcheck" id="bootChecks" aria-live="polite"></ul>
+
+        <div class="boot__actions" id="bootActions" hidden>
+          <button class="btn btn--primary" id="setupInstall" type="button">Install missing tools</button>
+          <button class="btn btn--ghost" id="setupSkip" type="button" hidden>Continue anyway</button>
+        </div>
+        <p class="boot__note" id="setupNote"></p>
       </div>
     </div>
 

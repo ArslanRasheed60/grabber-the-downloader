@@ -1133,9 +1133,9 @@ select.field__input {
   padding: 8px 10px;
 }
 
-/* ------------------------------------------------------------- onboarding */
+/* ------------------------------------------------- boot: logo + system check */
 
-.setup {
+.boot {
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -1145,9 +1145,15 @@ select.field__input {
   background: var(--chassis);
   /* The overlay covers the title bar, so let the surround move the window. */
   -webkit-app-region: drag;
+  transition: opacity 0.45s ease;
 }
 
-.setup::before {
+.boot.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -1155,51 +1161,184 @@ select.field__input {
   background-image: radial-gradient(circle at 50% 0%, var(--signal), transparent 60%);
 }
 
-.setup__panel {
+.boot__stage {
   -webkit-app-region: no-drag;
   position: relative;
-  width: min(560px, 100%);
-  padding: 30px;
-  border: 1px solid var(--rail);
-  border-top-color: #3d4a59;
-  border-radius: 8px;
-  background: linear-gradient(180deg, var(--faceplate), var(--chassis-2));
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  width: min(430px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.setup__title {
-  margin: 8px 0 10px;
+/* The app icon, drawn live: the arrow lands, then the tray segments run like a
+   meter warming up while the checks execute. */
+.bootmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 13px;
+}
+
+.bootmark__arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: markland 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+
+.bootmark__stem {
+  width: 16px;
+  height: 34px;
+  background: linear-gradient(180deg, var(--signal-hot), var(--signal));
+}
+
+.bootmark__head {
+  border-left: 27px solid transparent;
+  border-right: 27px solid transparent;
+  border-top: 30px solid var(--signal);
+}
+
+@keyframes markland {
+  from {
+    transform: translateY(-26px);
+    opacity: 0;
+  }
+}
+
+.bootmark__tray {
+  display: flex;
+  gap: 3px;
+}
+
+.bootmark__tray i {
+  width: 8px;
+  height: 15px;
+  background: var(--rail-soft);
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.boot.is-checking .bootmark__tray i {
+  animation: chase 1.1s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 0.09s);
+}
+
+.bootmark__tray i:nth-child(1) { --i: 0; }
+.bootmark__tray i:nth-child(2) { --i: 1; }
+.bootmark__tray i:nth-child(3) { --i: 2; }
+.bootmark__tray i:nth-child(4) { --i: 3; }
+.bootmark__tray i:nth-child(5) { --i: 4; }
+.bootmark__tray i:nth-child(6) { --i: 5; }
+.bootmark__tray i:nth-child(7) { --i: 6; }
+.bootmark__tray i:nth-child(8) { --i: 7; }
+.bootmark__tray i:nth-child(9) { --i: 8; }
+
+@keyframes chase {
+  0%,
+  100% {
+    background: var(--rail-soft);
+    box-shadow: none;
+  }
+  35% {
+    background: var(--signal);
+    box-shadow: 0 0 8px rgba(242, 163, 60, 0.55);
+  }
+}
+
+.boot.is-ready .bootmark__tray i {
+  animation: none;
+  background: var(--signal);
+  box-shadow: 0 0 6px rgba(242, 163, 60, 0.4);
+}
+
+.boot.is-blocked .bootmark__tray i {
+  animation: none;
+}
+
+.boot__wordmark {
+  margin: 18px 0 26px;
   font-family: var(--font-display);
   font-stretch: 87.5%;
-  font-size: 30px;
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
   text-transform: uppercase;
 }
 
-.setup__lede {
-  margin-bottom: 20px;
-  font-size: 13.5px;
-  color: var(--ink-dim);
-  line-height: 1.6;
-}
-
-.setup__actions {
+/* The check list reads like a machine's power-on self-test. */
+.bootcheck {
+  list-style: none;
+  width: 100%;
+  min-height: 132px;
   display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 22px;
+  flex-direction: column;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
 }
 
-.setup__note {
-  margin-top: 12px;
+.bootcheck__row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  animation: checkin 0.25s ease both;
+}
+
+@keyframes checkin {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.bootcheck__name {
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.bootcheck__dots {
+  flex: 1 1 auto;
+  border-bottom: 1px dotted var(--rail);
+  transform: translateY(-3px);
+}
+
+.bootcheck__value {
+  color: var(--ink-dim);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.bootcheck__row.is-ok .bootcheck__value {
+  color: var(--ok);
+}
+
+.bootcheck__row.is-bad .bootcheck__value {
+  color: var(--bad);
+}
+
+.bootcheck__row.is-busy .bootcheck__value {
+  color: var(--signal);
+}
+
+.boot__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.boot__note {
+  margin-top: 14px;
   min-height: 18px;
+  max-width: 100%;
+  text-align: center;
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 1.6;
   color: var(--ink-mute);
 }
 
-.setup__note.is-error {
+.boot__note.is-error {
   color: var(--bad);
 }
 

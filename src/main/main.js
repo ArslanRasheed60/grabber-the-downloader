@@ -54,7 +54,7 @@ function createWindow() {
     if (process.argv.includes('--dev')) mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
-  mainWindow.webContents.once('did-finish-load', keepYtDlpFresh);
+  mainWindow.webContents.once('did-finish-load', keepToolsOwned);
 
   const saveBounds = throttle(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized()) {
@@ -87,25 +87,45 @@ function send(channel, payload) {
 }
 
 /**
- * An out-of-date download engine is the single most common reason a download stops
- * working, and the user should never have to know that. Replace a stale copy on startup.
+ * Two quiet startup jobs, both about not depending on anything outside the app:
+ *
+ *  - A tool resolved from PATH belongs to someone else, and uninstalling it breaks
+ *    every download. The moment we notice we are borrowing one, install our own
+ *    copy — after which the system copy can come and go without the app noticing.
+ *  - An out-of-date engine is the most common reason a site stops working, so a
+ *    stale one is replaced with the current release.
  */
-async function keepYtDlpFresh() {
+async function keepToolsOwned() {
+  let announced = false;
   try {
-    const tool = await binaries.inspect('ytdlp');
-    if (!tool.ok || tool.ageDays === null || tool.ageDays < binaries.STALE_AFTER_DAYS) return;
-    send('app:toast', {
-      message: `The download engine is ${tool.ageDays} days old. Getting the current one…`,
-    });
-    const updated = await binaries.updateYtDlp((event) => send('setup:progress', event));
-    send('app:toast', { message: `Download engine updated to ${updated.version}.`, kind: 'ok' });
-    send('binaries:changed');
+    const status = await binaries.getStatus();
+    const engine = status.ytdlp;
+    const stale =
+      engine.ok && engine.ageDays !== null && engine.ageDays >= binaries.STALE_AFTER_DAYS;
+
+    if (stale) {
+      announced = true;
+      send('app:toast', {
+        message: `The download engine is ${engine.ageDays} days old. Getting the current one…`,
+      });
+      const updated = await binaries.updateYtDlp((event) => send('setup:progress', event));
+      send('app:toast', { message: `Download engine updated to ${updated.version}.`, kind: 'ok' });
+    }
+
+    const borrowed = ['ytdlp', 'ffmpeg', 'ffprobe'].filter(
+      (tool) => status[tool].ok && status[tool].source === 'system' && !(tool === 'ytdlp' && stale)
+    );
+    if (borrowed.length) {
+      await binaries.install(borrowed, (event) => send('setup:progress', event));
+    }
+
+    if (stale || borrowed.length) send('binaries:changed');
   } catch (err) {
-    // Not fatal — the copy already on this machine still works.
-    send('app:toast', {
-      message: `Could not update the download engine: ${err.message}`,
-      kind: 'bad',
-    });
+    // Not fatal — whatever the app resolved at boot still works today. Only speak
+    // up if we already promised an update.
+    if (announced) {
+      send('app:toast', { message: `Could not update the download engine: ${err.message}`, kind: 'bad' });
+    }
   }
 }
 
@@ -173,10 +193,24 @@ handle('settings:set', (patch) => {
 });
 
 handle('binaries:status', () => binaries.getStatus());
+handle('app:check-storage', () => {
+  const dir = store.getSettings().downloadDir;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+    return { ok: true, dir };
+  } catch (err) {
+    return { ok: false, dir, error: err.message };
+  }
+});
 handle('binaries:install', async () => {
   const result = await binaries.ensureAll((event) => send('setup:progress', event));
-  const failures = result.installed.filter((item) => !item.ok);
-  if (failures.length) throw new Error(failures.map((f) => f.error).join(' '));
+  // ffprobe is optional; failing the whole install over it would block a machine
+  // that is actually ready to download.
+  if (!result.status.ready) {
+    const failures = result.installed.filter((item) => !item.ok);
+    throw new Error(failures.map((f) => f.error).join(' ') || 'The tools could not be installed.');
+  }
   return result.status;
 });
 handle('binaries:update-ytdlp', async () => {
