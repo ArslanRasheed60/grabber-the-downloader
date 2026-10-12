@@ -25,6 +25,18 @@ app.whenReady().then(async () => {
   const downloader = require('../src/main/downloader');
   store.updateSettings({ downloadDir: output });
   binaries.STALE_AFTER_DAYS = Infinity;
+  // Fresh CI checkouts have no bundled tools. This test exercises UI/IPC rather
+  // than downloads, so provide a ready inventory instead of fetching executables.
+  // The explicit smoke/QA/sanity commands still require real working tools.
+  const inventory = await binaries.getStatus();
+  if (!inventory.ready || process.argv.includes('--without-tools')) {
+    binaries.getStatus = async () => ({
+      ...inventory, ready: true,
+      ...Object.fromEntries(['ytdlp', 'ffmpeg', 'ffprobe'].map((key) => [key, {
+        ...inventory[key], ok: true, source: 'bundled', version: 'test-fixture',
+      }])),
+    });
+  }
   BrowserWindow.prototype.show = function () {};
   const mainFile = path.join(root, 'src', 'main', 'main.js');
   let source = fs.readFileSync(mainFile, 'utf8');
