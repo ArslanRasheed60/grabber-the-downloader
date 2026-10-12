@@ -16,8 +16,8 @@ const store = require('./store');
  *
  * Lookup order for each tool:
  *   1. an explicit path the user set in Settings
- *   2. binaries shipped inside the installer (resources/bin)
- *   3. binaries this app downloaded earlier (userData/bin)
+ *   2. binaries this app downloaded/updated (userData/bin)
+ *   3. binaries shipped inside the installer (resources/bin)
  *   4. whatever is already on PATH
  * If none of those turn up, onboarding downloads it.
  */
@@ -144,21 +144,15 @@ function runVersion(file, args) {
 }
 
 /** Where would this tool come from right now, without downloading anything? */
-function locate(tool) {
+function candidatesFor(tool) {
   const meta = TOOLS[tool];
   const override = meta.settingKey ? String(store.getSettings()[meta.settingKey] || '').trim() : '';
-  if (override && isExecutableFile(override)) return { path: override, source: 'custom' };
-
-  const bundled = path.join(bundledDir(), meta.file);
-  if (isExecutableFile(bundled)) return { path: bundled, source: 'bundled' };
-
-  const managed = path.join(managedDir(), meta.file);
-  if (isExecutableFile(managed)) return { path: managed, source: 'managed' };
-
-  const onPath = findOnPath(meta.file);
-  if (onPath) return { path: onPath, source: 'system' };
-
-  return { path: null, source: null };
+  return [
+    { path: override, source: 'custom' },
+    { path: path.join(managedDir(), meta.file), source: 'managed' },
+    { path: path.join(bundledDir(), meta.file), source: 'bundled' },
+    { path: findOnPath(meta.file), source: 'system' },
+  ].filter((candidate) => candidate.path && isExecutableFile(candidate.path));
 }
 
 const versionCache = new Map();
@@ -173,24 +167,27 @@ function ytDlpAgeDays(version) {
 
 async function inspect(tool) {
   const meta = TOOLS[tool];
-  const found = locate(tool);
-  if (!found.path) {
-    return { tool, label: meta.label, ok: false, path: null, source: null, version: null };
+  let selected = null;
+  for (const found of candidatesFor(tool)) {
+    if (selected && found.source === 'system') break;
+    let stat;
+    try { stat = fs.statSync(found.path); } catch { continue; }
+    const stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    const cached = versionCache.get(found.path);
+    const version = cached?.stamp === stamp ? cached.version : await runVersion(found.path, meta.versionArgs);
+    // Never cache failures: a temporarily locked executable should recover.
+    if (!version) continue;
+    versionCache.set(found.path, { stamp, version });
+    const result = {
+      tool, label: meta.label, ok: true, path: found.path, source: found.source,
+      version, ageDays: tool === 'ytdlp' ? ytDlpAgeDays(version) : null,
+    };
+    if (tool !== 'ytdlp' || found.source === 'custom') return result;
+    // A new installer must not downgrade to an older managed engine either.
+    // Prefer managed on ties; compare release dates for the two owned copies.
+    if (!selected || version.localeCompare(selected.version, undefined, { numeric: true }) > 0) selected = result;
   }
-  let version = versionCache.get(found.path);
-  if (version === undefined) {
-    version = await runVersion(found.path, meta.versionArgs);
-    versionCache.set(found.path, version);
-  }
-  return {
-    tool,
-    label: meta.label,
-    ok: Boolean(version),
-    path: found.path,
-    source: found.source,
-    version: version || null,
-    ageDays: tool === 'ytdlp' ? ytDlpAgeDays(version) : null,
-  };
+  return selected || { tool, label: meta.label, ok: false, path: null, source: null, version: null };
 }
 
 async function getStatus() {
@@ -358,12 +355,12 @@ async function installViaPackageManager(tool, onEvent) {
     }
     // The install landed somewhere PATH may not know yet; wellKnownDirs covers it.
     versionCache.clear();
-    const found = locate(tool);
-    if (found.path) {
-      const version = await runVersion(found.path, meta.versionArgs);
+    const installedPath = findOnPath(meta.file);
+    if (installedPath) {
+      const version = await runVersion(installedPath, meta.versionArgs);
       if (version) {
         onEvent({ tool, label: meta.label, phase: 'done', percent: 100, version, method: step.manager });
-        return { tool, ok: true, path: found.path, version, method: step.manager };
+        return { tool, ok: true, path: installedPath, version, method: step.manager };
       }
     }
     onEvent({
@@ -467,7 +464,10 @@ async function ensureAll(onEvent) {
 async function updateYtDlp(onEvent) {
   const [result] = await install(['ytdlp'], onEvent);
   if (!result.ok) throw new Error(result.error);
-  // A managed copy outranks PATH, so the new build is what runs from here on.
+  // An explicit update also opts out of a custom engine override; otherwise the
+  // UI would announce an update while continuing to execute the old custom tool.
+  store.updateSettings({ ytdlpPath: result.method === 'download' ? '' : result.path });
+  // A managed copy outranks both the installer and PATH.
   return inspect('ytdlp');
 }
 

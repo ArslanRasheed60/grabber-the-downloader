@@ -6,6 +6,7 @@ const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const binaries = require('./binaries');
 const store = require('./store');
+const engine = require('./engine');
 const {
   makeId,
   num,
@@ -46,6 +47,7 @@ class Downloader extends EventEmitter {
     this.jobs = new Map();
     this.order = [];
     this.children = new Map();
+    this.preparations = new Map();
     this.lastEmit = new Map();
     this.emitTimers = new Map();
   }
@@ -185,8 +187,7 @@ class Downloader extends EventEmitter {
 
   /* ------------------------------------------------------------ arguments */
 
-  buildArgs(job, tools) {
-    const settings = store.getSettings();
+  buildArgs(job, tools, settings = store.getSettings(), withoutBrowserCookies = false, checkFormats = false) {
     const args = [
       '--ignore-config',
       '--no-warnings',
@@ -222,13 +223,9 @@ class Downloader extends EventEmitter {
     if (tools.ffmpeg.ok) args.push('--ffmpeg-location', path.dirname(tools.ffmpeg.path));
     if (settings.limitRate) args.push('--limit-rate', String(settings.limitRate));
     if (settings.proxy) args.push('--proxy', String(settings.proxy));
-    // An explicit cookies file wins: it is the only route that works for Chromium
-    // browsers on Windows, so if one is set it should not be second-guessed.
-    if (settings.cookiesFile) {
-      args.push('--cookies', String(settings.cookiesFile));
-    } else if (settings.cookiesFrom && settings.cookiesFrom !== 'none') {
-      args.push('--cookies-from-browser', String(settings.cookiesFrom));
-    }
+    args.push(...engine.runtimeArgs(), ...engine.cookieArgs(settings, withoutBrowserCookies));
+    args.push(...engine.downloadArgs(job.url));
+    if (checkFormats) args.push('--check-formats');
 
     const { mode, quality, container, audioFormat } = job.opts;
 
@@ -239,12 +236,19 @@ class Downloader extends EventEmitter {
       }
     } else {
       args.push('-f', this.formatSelector(quality, container));
-      if (container && container !== 'auto') args.push('--merge-output-format', container);
+      if (container === 'webm') {
+        // Prefer compatible streams. If the host only supplies another codec,
+        // merge safely first and convert rather than leaving an MP4 named WebM.
+        args.push('--merge-output-format', 'webm/mkv', '--recode-video', 'webm');
+      } else if (container && container !== 'auto') {
+        // Merge-only settings are ignored for a combined audio/video stream.
+        args.push('--merge-output-format', container, '--remux-video', container);
+      }
     }
 
     if (settings.embedMetadata) args.push('--embed-metadata');
     if (settings.embedChapters) args.push('--embed-chapters');
-    if (settings.embedThumbnail) args.push('--embed-thumbnail');
+    if (settings.embedThumbnail && this.thumbnailSupported(job.opts)) args.push('--embed-thumbnail');
     if (settings.sponsorblock) args.push('--sponsorblock-remove', 'default');
     if (settings.writeSubs && mode !== 'audio') {
       args.push(
@@ -256,21 +260,28 @@ class Downloader extends EventEmitter {
       );
     }
 
-    args.push('--paths', `home:${job.destDir}`, '-o', this.outputTemplate(job), job.url);
+    args.push('--paths', `home:${job.destDir}`, '-o', this.outputTemplate(job), '--', job.url);
     return args;
   }
 
   formatSelector(quality, container) {
     const height = Number(quality);
     const wantsMp4 = container === 'mp4';
+    const wantsWebm = container === 'webm';
     if (!Number.isFinite(height) || height <= 0) {
+      if (wantsWebm) return 'bv*[ext=webm]+ba[ext=webm]/b[ext=webm]/bv*+ba/b';
       return wantsMp4 ? 'bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b' : 'bv*+ba/b';
     }
     const cap = `[height<=${height}]`;
+    if (wantsWebm) return `bv*${cap}[ext=webm]+ba[ext=webm]/b${cap}[ext=webm]/bv*${cap}+ba/b${cap}/bv*+ba/b`;
     // Try the cap first, then fall back so an unusual host still yields a file.
     return wantsMp4
       ? `bv*${cap}[ext=mp4]+ba[ext=m4a]/bv*${cap}+ba/b${cap}/bv*+ba/b`
       : `bv*${cap}+ba/b${cap}/bv*+ba/b`;
+  }
+
+  thumbnailSupported(opts) {
+    return opts.mode === 'audio' ? opts.audioFormat !== 'wav' : opts.container !== 'webm';
   }
 
   outputTemplate(job) {
@@ -286,11 +297,13 @@ class Downloader extends EventEmitter {
 
   /* ------------------------------------------------------------- lifecycle */
 
-  async start(job) {
+  async start(job, { withoutBrowserCookies = false, checkFormats = false, settings = store.getSettings() } = {}) {
     if (!job || ACTIVE_STATES.has(job.state)) return;
+    const preparation = Symbol('preparation');
+    this.preparations.set(job.id, preparation);
     job.state = 'starting';
     job.error = null;
-    job.note = null;
+    job.note = checkFormats ? engine.MEDIA_RETRY_NOTICE : withoutBrowserCookies ? engine.COOKIE_RETRY_NOTICE : null;
     job.stage = 'Preparing';
     // A restart replays the stream sequence from the beginning. lastError has to go
     // too, or a retry that dies without printing ERROR: reports the previous reason.
@@ -305,11 +318,13 @@ class Downloader extends EventEmitter {
       binaries.inspect('ffprobe'),
     ]);
 
+    if (this.jobs.get(job.id) !== job || job.state !== 'starting' ||
+        this.preparations.get(job.id) !== preparation) return;
+    this.preparations.delete(job.id);
     if (!ytdlp.ok) {
       this.fail(job, 'yt-dlp is not installed yet. Finish setup first.');
       return;
     }
-    if (this.jobs.get(job.id) !== job || job.state !== 'starting') return;
 
     try {
       fs.mkdirSync(job.destDir, { recursive: true });
@@ -318,13 +333,17 @@ class Downloader extends EventEmitter {
       return;
     }
 
-    const args = this.buildArgs(job, { ffmpeg, ffprobe });
+    const args = this.buildArgs(job, { ffmpeg, ffprobe }, settings, withoutBrowserCookies, checkFormats);
+    if (settings.embedThumbnail && !this.thumbnailSupported(job.opts)) {
+      job.note = `${job.opts.mode === 'audio' ? 'WAV' : 'WebM'} does not support embedded cover art.`;
+      this.addLog(job, job.note);
+    }
     this.addLog(job, `$ yt-dlp ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
 
     let child;
     try {
       child = spawn(ytdlp.path, args, {
-        windowsHide: true,
+        ...engine.spawnOptions(),
         detached: process.platform !== 'win32',
       });
     } catch (err) {
@@ -340,6 +359,8 @@ class Downloader extends EventEmitter {
 
     let outBuffer = '';
     let errBuffer = '';
+    let stderr = '';
+    let spawnFailed = false;
 
     const handleOut = (chunk) => {
       outBuffer += chunk;
@@ -348,6 +369,7 @@ class Downloader extends EventEmitter {
       for (const line of lines) this.consumeLine(job, line);
     };
     const handleErr = (chunk) => {
+      stderr = (stderr + chunk).slice(-16384);
       errBuffer += chunk;
       const lines = errBuffer.split(/\r?\n/);
       errBuffer = lines.pop();
@@ -364,16 +386,36 @@ class Downloader extends EventEmitter {
     child.stderr.on('data', handleErr);
 
     child.on('error', (err) => {
+      spawnFailed = true;
       this.children.delete(job.id);
       this.fail(job, `yt-dlp stopped unexpectedly: ${err.message}`);
     });
 
     child.on('close', (code) => {
       if (outBuffer.trim()) this.consumeLine(job, outBuffer);
-      if (errBuffer.trim()) this.addLog(job, errBuffer);
+      if (errBuffer.trim()) {
+        this.addLog(job, errBuffer);
+        if (/^ERROR:/i.test(errBuffer.trim())) job.lastError = errBuffer.trim();
+      }
       outBuffer = '';
       errBuffer = '';
       this.children.delete(job.id);
+      if (spawnFailed) return;
+      if (code !== 0 && !withoutBrowserCookies && !job.killReason &&
+          this.jobs.get(job.id) === job && ACTIVE_STATES.has(job.state) &&
+          engine.shouldRetryWithoutBrowser(settings, stderr)) {
+        this.addLog(job, engine.COOKIE_RETRY_NOTICE);
+        job.state = 'queued';
+        this.start(job, { withoutBrowserCookies: true, checkFormats, settings });
+        return;
+      }
+      if (code !== 0 && !checkFormats && !job.killReason &&
+          this.jobs.get(job.id) === job && ACTIVE_STATES.has(job.state) && engine.isMediaForbidden(stderr)) {
+        this.addLog(job, engine.MEDIA_RETRY_NOTICE);
+        job.state = 'queued';
+        this.start(job, { withoutBrowserCookies, checkFormats: true, settings });
+        return;
+      }
       this.finish(job, code);
     });
   }
@@ -698,7 +740,14 @@ class Downloader extends EventEmitter {
     const job = this.jobs.get(id);
     if (!job) return;
     if (ACTIVE_STATES.has(job.state)) {
-      this.killTree(job, 'pause');
+      if (!this.killTree(job, 'pause')) {
+        this.preparations.delete(job.id);
+        job.state = 'paused';
+        job.stage = 'Paused';
+        job.finishedAt = null;
+        this.emitJob(job, { immediate: true });
+        this.pump();
+      }
     } else if (job.state === 'queued') {
       job.state = 'paused';
       job.stage = 'Paused';
@@ -722,7 +771,13 @@ class Downloader extends EventEmitter {
     const job = this.jobs.get(id);
     if (!job) return;
     if (ACTIVE_STATES.has(job.state)) {
-      this.killTree(job, 'cancel');
+      if (this.killTree(job, 'cancel')) return;
+      this.preparations.delete(job.id);
+      job.state = 'canceled';
+      job.stage = null;
+      job.finishedAt = Date.now();
+      this.emitJob(job, { immediate: true });
+      this.pump();
     } else if (job.state !== 'done') {
       job.state = 'canceled';
       job.stage = null;
@@ -736,6 +791,7 @@ class Downloader extends EventEmitter {
     const job = this.jobs.get(id);
     if (!job) return;
     if (ACTIVE_STATES.has(job.state)) this.killTree(job, 'cancel');
+    this.preparations.delete(id);
     this.jobs.delete(id);
     this.order = this.order.filter((jobId) => jobId !== id);
     clearTimeout(this.emitTimers.get(id));

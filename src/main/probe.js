@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const binaries = require('./binaries');
 const store = require('./store');
 const { num, str } = require('./util');
+const engine = require('./engine');
 
 /**
  * Ask yt-dlp what a link actually is before queueing anything.
@@ -25,12 +26,6 @@ const COOKIE_ADVICE =
   process.platform === 'win32'
     ? `Chrome and Edge keep their cookies encrypted on Windows, so ${COOKIE_FALLBACK}`
     : 'Open Settings and pick the browser you are signed into under "Use cookies from", or point "Cookies file" at an exported cookies.txt.';
-
-function cookieArgs(settings) {
-  if (settings.cookiesFile) return ['--cookies', String(settings.cookiesFile)];
-  const browser = String(settings.cookiesFrom || 'none');
-  return browser && browser !== 'none' ? ['--cookies-from-browser', browser] : [];
-}
 
 function networkArgs(settings) {
   // JSON output is ASCII-escaped so it survives regardless, but error text quoted
@@ -61,11 +56,14 @@ function friendlyError(stderr, url) {
   if (/does not look like a netscape format cookies file/i.test(raw)) {
     return 'That file is not a cookies.txt in Netscape format. Re-export it with a cookies.txt browser extension and pick it again.';
   }
-  if (/failed to decrypt|dpapi|app.?bound/i.test(raw)) {
+  if (/failed to decrypt|dpapi|app.?bound/i.test(text)) {
     return `Windows encrypts that browser's cookies and yt-dlp cannot read them — closing it will not help, so ${COOKIE_FALLBACK}`;
   }
   if (/could not copy.*cookie|cookie database|unable to (open|read).*cookie/i.test(raw)) {
     return `That browser is holding its cookie file open. Close it completely and try again. If it still fails, its cookies are encrypted — ${COOKIE_FALLBACK}`;
+  }
+  if (/no supported javascript runtime|javascript challenge|challenge solving|n challenge|signature solving/i.test(text)) {
+    return 'The video’s JavaScript challenge could not be solved. Update yt-dlp in Settings and try again.';
   }
   if (/unable to extract|player response|signature extraction/i.test(raw)) {
     return 'The site changed and yt-dlp needs updating. Open Settings and choose Update yt-dlp.';
@@ -73,17 +71,26 @@ function friendlyError(stderr, url) {
   if (/private video|members[- ]only|paid members/i.test(raw)) {
     return 'This video is private or members-only. Set "Use cookies from" to a browser with access.';
   }
+  if (/only works when logged[- ]in|login required|requires authentication|log in to (?:view|watch)|sign in to (?:view|watch)/i.test(raw)) {
+    return `This site requires a signed-in session. ${COOKIE_ADVICE}`;
+  }
   if (/video unavailable|removed by the uploader|no longer available/i.test(raw)) {
     return 'The host says this video is no longer available.';
   }
   if (/geo[- ]?restricted|not available in your country/i.test(raw)) {
     return 'The host blocks this video in your region. A proxy in Settings can get around it.';
   }
+  if (/HTTP Error 404|\bNot found\.?$/i.test(raw)) {
+    return 'The host could not find this video. Check the link; it may have been removed.';
+  }
   if (/unable to download webpage|getaddrinfo|network is unreachable|timed out/i.test(raw)) {
     return 'Could not reach the site. Check your connection and try again.';
   }
   if (/requested format is not available/i.test(raw)) {
     return 'That quality is not published for this video. Try "Best available".';
+  }
+  if (/HTTP Error 403|HTTP Error 429/i.test(raw)) {
+    return 'The video host refused the download. Update yt-dlp in Settings and retry. If it still fails, the host may require sign-in or may be temporarily limiting this connection.';
   }
   // Nothing matched, so yt-dlp's own words get quoted back.
   return raw || 'Grabber could not read this link.';
@@ -142,11 +149,11 @@ function normalizeEntry(entry, parent) {
 /**
  * @returns {Promise<{type:'video'|'playlist', ...}>}
  */
-function probe(url, { playlist = false, signal } = {}) {
-  const settings = store.getSettings();
+function probeOnce(url, { playlist = false, signal } = {}, settings, withoutBrowserCookies = false) {
   return binaries.inspect('ytdlp').then(
     (tool) =>
       new Promise((resolve, reject) => {
+        if (signal && signal.aborted) return reject(new Error('Canceled'));
         if (!tool.ok) {
           return reject(new Error('yt-dlp is not installed yet. Finish setup first.'));
         }
@@ -158,11 +165,13 @@ function probe(url, { playlist = false, signal } = {}) {
           '--flat-playlist',
           ...(playlist ? [] : ['--no-playlist']),
           ...networkArgs(settings),
-          ...cookieArgs(settings),
+          ...engine.runtimeArgs(),
+          ...engine.cookieArgs(settings, withoutBrowserCookies),
+          '--',
           url,
         ];
 
-        const child = spawn(tool.path, args, { windowsHide: true });
+        const child = spawn(tool.path, args, engine.spawnOptions());
         let stdout = '';
         let stderr = '';
         let settled = false;
@@ -171,6 +180,7 @@ function probe(url, { playlist = false, signal } = {}) {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
+          if (signal) signal.removeEventListener('abort', abort);
           fn(value);
         };
 
@@ -179,13 +189,14 @@ function probe(url, { playlist = false, signal } = {}) {
           finish(reject, new Error('The site took too long to answer. Try again.'));
         }, PROBE_TIMEOUT_MS);
 
-        if (signal) {
-          signal.addEventListener('abort', () => {
-            child.kill();
-            finish(reject, new Error('Canceled'));
-          });
-        }
+        const abort = () => {
+          child.kill();
+          finish(reject, new Error('Canceled'));
+        };
+        if (signal) signal.addEventListener('abort', abort, { once: true });
 
+        child.stdout.setEncoding('utf8');
+        child.stderr.setEncoding('utf8');
         child.stdout.on('data', (chunk) => {
           stdout += chunk;
         });
@@ -198,7 +209,9 @@ function probe(url, { playlist = false, signal } = {}) {
 
         child.on('close', (code) => {
           if (code !== 0 || !stdout.trim()) {
-            return finish(reject, new Error(friendlyError(stderr, url)));
+            const error = new Error(friendlyError(stderr, url));
+            error.stderr = stderr;
+            return finish(reject, error);
           }
           let info;
           try {
@@ -245,6 +258,37 @@ function probe(url, { playlist = false, signal } = {}) {
         });
       })
   );
+}
+
+async function probe(url, options = {}) {
+  const settings = store.getSettings();
+  let withoutBrowserCookies = false;
+  try {
+    return await probeOnce(url, options, settings);
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    if (engine.shouldRetryWithoutBrowser(settings, error.stderr || '')) {
+      withoutBrowserCookies = true;
+      try {
+        const result = await probeOnce(url, options, settings, true);
+        return { ...result, notice: engine.COOKIE_RETRY_NOTICE };
+      } catch (retryError) { error = retryError; }
+    }
+    // Some public Vimeo watch pages require an authenticated web API, while
+    // their public embedded player still supplies the video's download config.
+    // Only try that equivalent URL for this specific client error. Private and
+    // password-protected video failures retain their authentication requirements.
+    if (!options.signal?.aborted && /web client only works when logged[- ]in/i.test(error.stderr || '')) {
+      let link;
+      try { link = new URL(url); } catch { /* invalid input keeps the original error */ }
+      if (link && /^(?:www\.)?vimeo\.com$/i.test(link.hostname) && /^\/\d+\/?$/.test(link.pathname)) {
+        const embedded = `https://player.vimeo.com/video/${link.pathname.replace(/\//g, '')}${link.search}`;
+        const result = await probeOnce(embedded, options, settings, withoutBrowserCookies);
+        return withoutBrowserCookies ? { ...result, notice: engine.COOKIE_RETRY_NOTICE } : result;
+      }
+    }
+    throw error;
+  }
 }
 
 module.exports = { probe, friendlyError };

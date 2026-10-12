@@ -534,7 +534,7 @@ function paintRow(row, job) {
   error.textContent = job.error || '';
 
   const pauseBtn = row.querySelector('.job__pause');
-  pauseBtn.disabled = job.state === 'starting';
+  pauseBtn.disabled = false;
 }
 
 function renderQueue(jobs) {
@@ -985,7 +985,19 @@ function wireUi() {
   });
 
   // "Just paste the link" — a paste that looks like a link goes straight in.
-  el.urlInput.addEventListener('paste', () => {
+  el.urlInput.addEventListener('paste', (event) => {
+    const pasted = event.clipboardData && event.clipboardData.getData('text');
+    // Single-line inputs strip line breaks, joining pasted URLs together. Keep
+    // separators so the multiple-link parser receives each original link.
+    if (pasted && /[\r\n]/.test(pasted)) {
+      event.preventDefault();
+      el.urlInput.setRangeText(
+        pasted.replace(/[\r\n]+/g, ' '),
+        el.urlInput.selectionStart,
+        el.urlInput.selectionEnd,
+        'end'
+      );
+    }
     setTimeout(() => {
       const value = el.urlInput.value.trim();
       if (/^https?:\/\//i.test(value) && !state.busy) handleSubmit();

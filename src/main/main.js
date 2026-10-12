@@ -101,7 +101,7 @@ async function keepToolsOwned() {
     const status = await binaries.getStatus();
     const engine = status.ytdlp;
     const stale =
-      engine.ok && engine.ageDays !== null && engine.ageDays >= binaries.STALE_AFTER_DAYS;
+      engine.ok && engine.source !== 'custom' && engine.ageDays !== null && engine.ageDays >= binaries.STALE_AFTER_DAYS;
 
     if (stale) {
       announced = true;
@@ -218,7 +218,11 @@ handle('binaries:update-ytdlp', async () => {
   return tool;
 });
 
-handle('probe:run', (url, options) => probe(url, options || {}));
+handle('probe:run', async (url, options) => {
+  const result = await probe(url, options || {});
+  if (result.notice) send('app:toast', { message: result.notice });
+  return result;
+});
 handle('probe:urls', (text) => extractUrls(text));
 
 handle('queue:add', (items, opts) => downloader.add(items || [], opts || {}));

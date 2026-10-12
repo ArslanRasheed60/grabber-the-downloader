@@ -5,6 +5,8 @@ just about any video site, pick a quality, and watch it download. Runs on Window
 
 Grabber installs the tools it needs by itself. There is no Python to set up, no ffmpeg to
 put on your PATH, and nothing to configure before the first download.
+YouTube's JavaScript challenges use the Node runtime already included with Electron;
+you do not need a separate Node or Deno installation to run a packaged Grabber app.
 
 ## Running it from source
 
@@ -85,6 +87,34 @@ Two things to know before you ship a build:
 npm test
 ```
 
+This runs the queue/settings checks and deterministic download-recovery tests (cookie
+access failures, HTTP 403 retries, canceled jobs, and tool-update selection).
+An optional live check downloads a public video through the real queue, verifies the
+complete audio/video streams with ffprobe, then checks MP3 conversion:
+
+```bash
+npm run test:smoke
+npm run test:smoke -- "https://www.youtube.com/watch?v=VIDEO_ID" --quality=360
+```
+
+The live check uses a temporary settings profile and saves its media and logs under
+`release/smoke-*`. It requires installed download tools and network access.
+
+`npm test` also exercises the renderer, sandboxed preload and IPC in a hidden window.
+For a broader live matrix plus real pause/resume/cancel checks, run `npm run test:qa`.
+It saves media, logs and a report under `release/qa-*`; restricted or unavailable
+samples are reported explicitly. See [QA-report.md](QA-report.md) for the latest run.
+
+`npm run test:sanity` exercises every app button/control through the renderer and IPC,
+all four container choices, all six audio choices, and metadata/cover/chapter/subtitle/
+sponsor-cut postprocessing with local fixtures. Native dialog selections and external
+app launches are intercepted. It saves results under `release/sanity-*`.
+The final release check is documented in [SANITY-report.md](SANITY-report.md).
+
+MP4 and MKV selections remux combined streams as needed. WebM prefers compatible
+streams and converts when necessary, which can take longer. WAV and WebM downloads
+skip embedded cover art because those containers do not support it.
+
 Covers the parts that are easy to get wrong and hard to see by reading:
 
 - the progress meter, against lines captured from real yt-dlp runs — it must only ever rise,
@@ -143,11 +173,21 @@ Two things that do work:
 
 Keep the file to yourself: it grants access to your signed-in session.
 
+Leave *Use cookies from* at *No browser* for public videos. If a selected browser's
+cookie database cannot be copied or decrypted, Grabber retries that request once without
+browser cookies and explains what happened. Your saved browser choice is preserved, and
+an explicitly selected cookies file is never silently ignored.
+
 ## Keeping yt-dlp current
 
 Sites change constantly and yt-dlp ships fixes almost daily. **Settings → Update yt-dlp**
 fetches the newest release. If a site suddenly stops working, do that first — it is the fix
 most of the time.
+
+Grabber selects the newer of its bundled and downloaded engines, so an older installer
+cannot hide an update, and a newer installer cannot be overridden by an older downloaded
+copy. An explicit update switches away from any custom engine path. Failed tool checks
+fall back to another working copy.
 
 ## Where things go
 
@@ -167,6 +207,11 @@ The row turns red and states the problem. The common ones:
 - **"No extractor handles this link"** — the page may embed video from somewhere else. Try
   the direct link, or update yt-dlp.
 - **"That quality is not published for this video"** — pick *Best video*.
+- **"HTTP Error 403: Forbidden"** — the host refused a media request; this is not a
+  Chrome cache error. Grabber refreshes media links and checks available formats once
+  before reporting a failure. YouTube downloads use bounded HTTP requests to avoid
+  rejected or stalled full-file requests. Update the engine if the error persists;
+  sign-in requirements and host-side restrictions can still prevent a download.
 - **The host blocks your region** — set a proxy in Settings.
 
 ## How it is put together
@@ -174,6 +219,7 @@ The row turns red and states the problem. The common ones:
 ```
 src/main/binaries.js    finds or downloads yt-dlp, ffmpeg, ffprobe
 src/main/probe.js       reads a link with `yt-dlp -J` before anything is queued
+src/main/engine.js      shared runtime, cookie and request/retry policy
 src/main/downloader.js  the queue: spawning, progress parsing, pause/resume/cancel
 src/main/store.js       settings and history on disk
 src/preload/preload.js  the only bridge between the page and the system

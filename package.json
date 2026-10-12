@@ -1,7 +1,7 @@
 {
   "name": "yt-dlp-wrapper",
   "productName": "Grabber",
-  "version": "1.3.0",
+  "version": "1.0.0",
   "description": "Paste a link, get the video.",
   "main": "src/main/main.js",
   "author": "arsla",
@@ -10,7 +10,10 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "electron test/app.test.js",
+    "test": "node --test test/recovery.test.js && electron test/app.test.js && electron test/ui.test.js",
+    "test:smoke": "electron test/smoke.test.js",
+    "test:qa": "electron test/qa.test.js",
+    "test:sanity": "electron test/sanity.test.js",
     "fetch:bin": "node scripts/fetch-binaries.js",
     "dist:win": "node scripts/fetch-binaries.js --platform win32 --arch x64 && electron-builder --win --x64",
     "dist:mac": "node scripts/fetch-binaries.js --platform darwin --arch arm64 && electron-builder --mac --arm64",
