@@ -1,0 +1,39 @@
+Grabber third-party notices
+==========================
+
+Grabber source code: MIT License, copyright 2026 Arslan Rasheed.
+See LICENSE for the complete license text.
+
+Electron
+--------
+https://github.com/electron/electron
+Electron is licensed under MIT and incorporates components with other licenses.
+Packaged applications include Electron-LICENSE.txt and LICENSES.chromium.html
+inside Contents/Resources/licenses on macOS (resources/licenses on Windows).
+Consult those files for the included runtime's notices.
+
+Download tools
+--------------
+The macOS installers do not include yt-dlp, FFmpeg or FFprobe executables.
+Grabber downloads them directly from upstream when the user installs tools.
+Their licenses are separate from Grabber's MIT license.
+
+yt-dlp source is published under the Unlicense:
+https://github.com/yt-dlp/yt-dlp
+https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE
+PyInstaller executables incorporate GPLv3+ and other third-party code:
+https://github.com/yt-dlp/yt-dlp/blob/master/THIRD_PARTY_LICENSES.txt
+https://github.com/yt-dlp/yt-dlp/releases
+
+FFmpeg and FFprobe licensing depends on the configuration of the particular build.
+https://ffmpeg.org/legal.html
+Grabber's tool provider publishes binaries, license files and build information:
+https://github.com/eugeneware/ffmpeg-static/releases
+The macOS arm64 build currently reports --enable-nonfree. FFmpeg marks such
+builds as non-redistributable, so it is not bundled in Grabber's macOS release.
+Run ffmpeg -L and ffmpeg -version to inspect a downloaded build's license and flags.
+
+If you distribute a build that includes downloaded tools (including Windows
+installers), you are responsible for retaining their notices and satisfying
+the licenses of those exact binaries and their dependencies, including any
+applicable corresponding-source requirements.

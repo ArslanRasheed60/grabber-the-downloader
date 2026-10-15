@@ -8,7 +8,7 @@
  *      streams each reported from zero;
  *   2. playlist output paths, which decide the folder and the ordering;
  *   3. a job deleted mid-download staying deleted;
- *   4. the interface never naming the tool underneath it.
+ *   4. the interface clearly naming the tools it checks.
  *
  * Run with: npm test   (it needs Electron, because the queue module reaches into
  * app paths for settings; no window is ever opened.)

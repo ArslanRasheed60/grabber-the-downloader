@@ -4,9 +4,16 @@
   "version": "1.0.0",
   "description": "Paste a link, get the video.",
   "main": "src/main/main.js",
-  "author": "arsla",
+  "author": "Arslan Rasheed",
   "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ArslanRasheed60/grabber-the-downloader.git"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
@@ -16,8 +23,8 @@
     "test:sanity": "electron test/sanity.test.js",
     "fetch:bin": "node scripts/fetch-binaries.js",
     "dist:win": "node scripts/fetch-binaries.js --platform win32 --arch x64 && electron-builder --win --x64",
-    "dist:mac": "node scripts/fetch-binaries.js --platform darwin --arch arm64 && electron-builder --mac --arm64",
-    "dist:mac-intel": "node scripts/fetch-binaries.js --platform darwin --arch x64 && electron-builder --mac --x64",
+    "dist:mac": "electron-builder --mac --arm64 --publish never",
+    "dist:mac-intel": "electron-builder --mac --x64 --publish never",
     "pack": "electron-builder --dir"
   },
   "build": {
@@ -35,15 +42,30 @@
     ],
     "extraResources": [
       {
-        "from": "resources/bin",
-        "to": "bin",
-        "filter": [
-          "**/*",
-          "!.gitkeep"
-        ]
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "licenses/Electron-LICENSE.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "licenses/LICENSES.chromium.html"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
       }
     ],
     "win": {
+      "extraResources": [
+        {
+          "from": "resources/bin",
+          "to": "bin",
+          "filter": ["**/*", "!.gitkeep"]
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -61,6 +83,7 @@
       "shortcutName": "Grabber"
     },
     "mac": {
+      "identity": "-",
       "target": [
         "dmg",
         "zip"
