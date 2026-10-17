@@ -10,9 +10,9 @@ Get installers from [GitHub Releases](https://github.com/ArslanRasheed60/grabber
 
 | Platform | Installer |
 | --- | --- |
-| macOS Apple Silicon (M1 and newer) | `Grabber-1.0.0-mac-arm64.dmg` |
-| macOS Intel | `Grabber-1.0.0-mac-x64.dmg` |
-| Windows x64 | `Grabber-1.0.0-win-x64.exe` |
+| macOS Apple Silicon (M1 and newer) | `Grabber-1.0.1-mac-arm64.dmg` |
+| macOS Intel | `Grabber-1.0.1-mac-x64.dmg` |
+| Windows x64 | `Grabber-1.0.1-win-x64.exe` |
 
 macOS releases also include ZIP archives. Open the DMG and drag Grabber into
 Applications. The builds are signed ad hoc, without Apple Developer ID signing
@@ -95,7 +95,10 @@ it does not make them part of the macOS installer.
 
 The repository's **Build** workflow tests and builds Windows and both macOS
 architectures on pushes to `main` or manual runs. Download the resulting installers
-from the workflow artifacts. Publishing a GitHub release is a separate step.
+from the workflow artifacts. To publish a version, run the workflow manually with
+**Publish the current version as a GitHub release** enabled. After all three builds
+pass, it verifies the installer names and SHA-256 checksums, then publishes the
+current package version with Windows and both macOS architectures.
 
 ## Tests
 

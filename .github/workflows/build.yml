@@ -3,6 +3,11 @@ name: Build
 # Run from the Actions tab or push to main, then download the installer artifacts.
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the current version as a GitHub release
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -33,6 +38,26 @@ jobs:
             release/*.dmg
             release/*.zip
           if-no-files-found: error
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download the verified build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh run download "$GITHUB_RUN_ID" --pattern 'grabber-*' --dir release-assets
+      - name: Verify and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/publish-release.js --publish
 
   windows:
     name: Windows (x64)
